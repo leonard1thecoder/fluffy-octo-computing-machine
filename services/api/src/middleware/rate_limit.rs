@@ -2,7 +2,6 @@ use crate::state::SharedState;
 
 /// Fixed-window Redis rate limit via atomic Lua INCR+EXPIRE.
 /// Fail-closed: if Redis is unavailable, callers must return 503 (never silently disable limits).
-
 pub async fn check(s: &SharedState, key: &str, limit: u64, window_secs: u64) -> anyhow::Result<bool> {
     let mut conn = s.redis.get_multiplexed_async_connection().await?;
     let script = redis::Script::new(

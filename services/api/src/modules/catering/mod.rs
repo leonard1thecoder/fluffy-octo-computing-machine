@@ -1,5 +1,5 @@
 use axum::{Json, Router, extract::{Path, State}, http::StatusCode, routing::{get, patch, post}};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 use crate::{errors::{ApiError, ApiResult}, middleware::authentication::user_from_headers, response::ApiResponse, state::SharedState, workers::email_outbox};
@@ -45,16 +45,16 @@ async fn create_request(State(s): State<SharedState>, Json(body): Json<CreateReq
     let admin_html = email_outbox::branded_template("New catering enquiry", &format!("<p>{} · {} guests · {}</p>", email_outbox::escape_html(&body.contact_name), body.guest_count, event_date));
     email_outbox::enqueue(&mut tx, &s.cfg.brevo_sender_email, "New catering enquiry", &admin_html).await.map_err(|_| ApiError::Internal)?;
     tx.commit().await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::created(serde_json::json!({"id": id}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::created(serde_json::json!({"id": id}));
+    Ok((st, Json(inner.data)))
 }
 
 async fn get_request(State(s): State<SharedState>, Path(id): Path<Uuid>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
     let rec: Option<(String, String)> = sqlx::query_as("SELECT event_type, status::text FROM catering_requests WHERE id=$1")
         .bind(id).fetch_optional(&s.db).await.map_err(|_| ApiError::Internal)?;
     let Some((event_type, status)) = rec else { return Err(ApiError::NotFound) };
-    let (st, b) = ApiResponse::ok(serde_json::json!({"id": id, "event_type": event_type, "status": status}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"id": id, "event_type": event_type, "status": status}));
+    Ok((st, Json(inner.data)))
 }
 
 async fn admin_list(State(s): State<SharedState>, headers: axum::http::HeaderMap) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -63,8 +63,8 @@ async fn admin_list(State(s): State<SharedState>, headers: axum::http::HeaderMap
     let rows: Vec<(Uuid, String, String)> = sqlx::query_as("SELECT id, event_type, status::text FROM catering_requests ORDER BY created_at DESC LIMIT 100")
         .fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
     let items: Vec<_> = rows.into_iter().map(|(id, t, st)| serde_json::json!({"id": id, "event_type": t, "status": st})).collect();
-    let (st, b) = ApiResponse::ok(items);
-    Ok((st, Json(serde_json::to_value(b.data).unwrap())))
+    let (st, Json(inner)) = ApiResponse::ok(items);
+    Ok((st, Json(serde_json::to_value(inner.data).unwrap())))
 }
 
 #[derive(Deserialize)]
@@ -81,8 +81,8 @@ async fn admin_update(State(s): State<SharedState>, headers: axum::http::HeaderM
         sqlx::query("INSERT INTO audit_logs (actor_user_id, action, entity, entity_id) VALUES ($1,'catering.update','catering_request',$2)")
             .bind(u.user_id).bind(id.to_string()).execute(&s.db).await.map_err(|_| ApiError::Internal)?;
     }
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
+    Ok((st, Json(inner.data)))
 }
 
 #[derive(Deserialize, Validate)]
@@ -92,7 +92,7 @@ struct QuoteReq {
     valid_until: String,
     deposit_cents: Option<i64>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct QuoteItem { description: String, qty: i32, unit_price_cents: i64 }
 
 async fn create_quote(State(s): State<SharedState>, headers: axum::http::HeaderMap, Path(req_id): Path<Uuid>, Json(body): Json<QuoteReq>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -117,8 +117,8 @@ async fn create_quote(State(s): State<SharedState>, headers: axum::http::HeaderM
         email_outbox::enqueue(&mut tx, &email, "Your Nhlanganiso catering quote", &html).await.map_err(|_| ApiError::Internal)?;
     }
     tx.commit().await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::created(serde_json::json!({"id": qid, "total_cents": total}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::created(serde_json::json!({"id": qid, "total_cents": total}));
+    Ok((st, Json(inner.data)))
 }
 
 async fn accept_quote(State(s): State<SharedState>, Path(qid): Path<Uuid>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -139,6 +139,6 @@ async fn accept_quote(State(s): State<SharedState>, Path(qid): Path<Uuid>) -> Ap
     // Accepted != paid. If a deposit is due, the customer pays via the normal
     // PayFast checkout linked to an order; never mark paid here.
     tx.commit().await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
+    Ok((st, Json(inner.data)))
 }

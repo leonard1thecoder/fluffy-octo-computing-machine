@@ -88,8 +88,8 @@ async fn get_payment(State(s): State<SharedState>, headers: axum::http::HeaderMa
     if me.role != "admin" && owner != Some(me.user_id) {
         return Err(ApiError::Forbidden);
     }
-    let (st, b) = ApiResponse::ok(serde_json::json!({"id": id, "status": status, "expected_amount_cents": amount}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"id": id, "status": status, "expected_amount_cents": amount}));
+    Ok((st, Json(inner.data)))
 }
 
 /// PayFast ITN: `application/x-www-form-urlencoded`. Full validation:

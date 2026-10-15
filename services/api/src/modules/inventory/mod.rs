@@ -14,8 +14,8 @@ async fn list(State(s): State<SharedState>, headers: axum::http::HeaderMap) -> A
     let rows: Vec<(uuid::Uuid, uuid::Uuid, i32, String)> = sqlx::query_as("SELECT id, product_id, qty_delta, reason FROM inventory_movements ORDER BY created_at DESC LIMIT 100")
         .fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
     let items: Vec<_> = rows.into_iter().map(|(id, pid, d, r)| serde_json::json!({"id": id, "product_id": pid, "qty_delta": d, "reason": r})).collect();
-    let (st, b) = ApiResponse::ok(items);
-    Ok((st, Json(serde_json::to_value(b.data).unwrap())))
+    let (st, Json(inner)) = ApiResponse::ok(items);
+    Ok((st, Json(serde_json::to_value(inner.data).unwrap())))
 }
 
 #[derive(Deserialize)]
@@ -36,6 +36,6 @@ async fn adjust(State(s): State<SharedState>, headers: axum::http::HeaderMap, Js
         .bind(body.product_id).bind(body.qty_delta).bind(&body.reason).bind(u.user_id)
         .execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
     tx.commit().await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true, "stock_on_hand": res}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true, "stock_on_hand": res}));
+    Ok((st, Json(inner.data)))
 }

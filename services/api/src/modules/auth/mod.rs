@@ -2,7 +2,6 @@ pub mod jwt;
 pub mod password;
 
 use axum::{Json, Router, extract::{ConnectInfo, Path, Query, State}, http::StatusCode, routing::{delete, get, post}};
-use base64::Engine as _;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr};
@@ -141,8 +140,8 @@ async fn register(
     sqlx::query("INSERT INTO audit_logs (actor_user_id, action, entity, entity_id) VALUES ($1,'auth.register','user',$2)")
         .bind(user_id).bind(user_id.to_string()).execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
     tx.commit().await.map_err(|_| ApiError::Internal)?;
-    let (s, b) = ApiResponse::created(serde_json::json!({"id": user_id, "email": email}));
-    Ok((s, Json(b.data)))
+    let (s, Json(inner)) = ApiResponse::created(serde_json::json!({"id": user_id, "email": email}));
+    Ok((s, Json(inner.data)))
 }
 
 async fn login(
@@ -178,8 +177,8 @@ async fn login(
     sqlx::query("INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent, ip) VALUES ($1,$2,now()+($3::bigint * interval '1 second'),$4,$5)")
         .bind(uid).bind(refresh_hash).bind(s.cfg.jwt_refresh_ttl_secs).bind(ua).bind(addr.ip().to_string())
         .execute(&s.db).await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::ok(TokenPair { access_token: access, refresh_token: refresh_raw, expires_in: s.cfg.jwt_access_ttl_secs });
-    Ok((st, Json(serde_json::to_value(b.data).unwrap())))
+    let (st, Json(inner)) = ApiResponse::ok(TokenPair { access_token: access, refresh_token: refresh_raw, expires_in: s.cfg.jwt_access_ttl_secs });
+    Ok((st, Json(serde_json::to_value(inner.data).unwrap())))
 }
 
 async fn refresh(
@@ -218,8 +217,8 @@ async fn refresh(
         .execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
     tx.commit().await.map_err(|_| ApiError::Internal)?;
     let access = jwt::mint_access(user_id, &s.cfg).map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::ok(TokenPair { access_token: access, refresh_token: new_raw, expires_in: s.cfg.jwt_access_ttl_secs });
-    Ok((st, Json(serde_json::to_value(b.data).unwrap())))
+    let (st, Json(inner)) = ApiResponse::ok(TokenPair { access_token: access, refresh_token: new_raw, expires_in: s.cfg.jwt_access_ttl_secs });
+    Ok((st, Json(serde_json::to_value(inner.data).unwrap())))
 }
 
 async fn logout(State(s): State<SharedState>, headers: axum::http::HeaderMap, body: Option<Json<RefreshReq>>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -229,8 +228,8 @@ async fn logout(State(s): State<SharedState>, headers: axum::http::HeaderMap, bo
         sqlx::query("UPDATE refresh_tokens SET revoked_at=now() WHERE token_hash=$1 AND user_id=$2")
             .bind(h).bind(user.user_id).execute(&s.db).await.map_err(|_| ApiError::Internal)?;
     }
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
+    Ok((st, Json(inner.data)))
 }
 
 async fn logout_all(State(s): State<SharedState>, headers: axum::http::HeaderMap) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -238,8 +237,8 @@ async fn logout_all(State(s): State<SharedState>, headers: axum::http::HeaderMap
     sqlx::query("UPDATE refresh_tokens SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL")
         .bind(user.user_id).execute(&s.db).await.map_err(|_| ApiError::Internal)?;
     // Invalidate JWTs issued before now by bumping a per-user serial (checked on password change path).
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
+    Ok((st, Json(inner.data)))
 }
 
 async fn me(State(s): State<SharedState>, headers: axum::http::HeaderMap) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -247,8 +246,8 @@ async fn me(State(s): State<SharedState>, headers: axum::http::HeaderMap) -> Api
     let rec: Option<(String, String, String)> = sqlx::query_as("SELECT email, full_name, role::text FROM users WHERE id=$1")
         .bind(user.user_id).fetch_optional(&s.db).await.map_err(|_| ApiError::Internal)?;
     let Some((email, full_name, role)) = rec else { return Err(ApiError::Unauthorized) };
-    let (st, b) = ApiResponse::ok(serde_json::json!({"id": user.user_id, "email": email, "full_name": full_name, "role": role}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"id": user.user_id, "email": email, "full_name": full_name, "role": role}));
+    Ok((st, Json(inner.data)))
 }
 
 async fn list_sessions(State(s): State<SharedState>, headers: axum::http::HeaderMap) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -258,16 +257,16 @@ async fn list_sessions(State(s): State<SharedState>, headers: axum::http::Header
     )
     .bind(user.user_id).fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
     let items: Vec<_> = rows.into_iter().map(|(id, created_at, ua, ip)| serde_json::json!({"id": id, "created_at": created_at, "user_agent": ua, "ip": ip})).collect();
-    let (st, b) = ApiResponse::ok(items);
-    Ok((st, Json(serde_json::to_value(b.data).unwrap())))
+    let (st, Json(inner)) = ApiResponse::ok(items);
+    Ok((st, Json(serde_json::to_value(inner.data).unwrap())))
 }
 
 async fn delete_session(State(s): State<SharedState>, headers: axum::http::HeaderMap, Path(id): Path<Uuid>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
     let user = bearer_user(&s, &headers).await?;
     sqlx::query("UPDATE refresh_tokens SET revoked_at=now() WHERE id=$1 AND user_id=$2")
         .bind(id).bind(user.user_id).execute(&s.db).await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
+    Ok((st, Json(inner.data)))
 }
 
 async fn verify_email(State(s): State<SharedState>, Query(q): Query<HashMap<String, String>>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -280,8 +279,8 @@ async fn verify_email(State(s): State<SharedState>, Query(q): Query<HashMap<Stri
     sqlx::query("UPDATE email_verification_tokens SET used_at=now() WHERE id=$1").bind(tid).execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
     sqlx::query("UPDATE users SET email_verified_at=now() WHERE id=$1").bind(uid).execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
     tx.commit().await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
+    Ok((st, Json(inner.data)))
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -309,8 +308,8 @@ async fn request_password_reset(State(s): State<SharedState>, Json(body): Json<P
         email_outbox::enqueue(&mut tx, &email, "Reset your Nhlanganiso password", &html).await.map_err(|_| ApiError::Internal)?;
         tx.commit().await.map_err(|_| ApiError::Internal)?;
     }
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
+    Ok((st, Json(inner.data)))
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -333,6 +332,6 @@ async fn confirm_password_reset(State(s): State<SharedState>, Json(body): Json<P
     // Invalidate all sessions after password change.
     sqlx::query("UPDATE refresh_tokens SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL").bind(uid).execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
     tx.commit().await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
+    Ok((st, Json(inner.data)))
 }

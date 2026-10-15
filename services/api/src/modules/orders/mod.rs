@@ -1,5 +1,5 @@
 use axum::{Json, Router, extract::{Path, State}, http::StatusCode, routing::{get, post}};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 use crate::{errors::{ApiError, ApiResult}, middleware::authentication::user_from_headers, response::ApiResponse, state::SharedState, workers::email_outbox};
@@ -27,7 +27,7 @@ struct CreateReq {
     delivery_address: Option<String>,
     notes: Option<String>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct Item { product_id: Uuid, variant_id: Option<Uuid>, qty: i32 }
 
 fn order_ref() -> String {
@@ -93,8 +93,8 @@ async fn create(State(s): State<SharedState>, headers: axum::http::HeaderMap, Js
     let html = email_outbox::branded_template("Order received", &format!("<p>Reference <b>{}</b> — total R{:.2}. Pay via checkout to confirm.</p>", reference, total as f64 / 100.0));
     email_outbox::enqueue(&mut tx, &body.contact_email, &format!("Order {reference} received"), &html).await.map_err(|_| ApiError::Internal)?;
     tx.commit().await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::created(serde_json::json!({"id": order_id, "reference": reference, "total_cents": total, "currency": "ZAR"}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::created(serde_json::json!({"id": order_id, "reference": reference, "total_cents": total, "currency": "ZAR"}));
+    Ok((st, Json(inner.data)))
 }
 
 async fn mine_alias(State(s): State<SharedState>, headers: axum::http::HeaderMap) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -102,8 +102,8 @@ async fn mine_alias(State(s): State<SharedState>, headers: axum::http::HeaderMap
     let rows: Vec<(Uuid, String, i64, String)> = sqlx::query_as("SELECT id, reference, total_cents, payment_status::text FROM orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50")
         .bind(me.user_id).fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
     let items: Vec<_> = rows.into_iter().map(|(id, r, t, ps)| serde_json::json!({"id": id, "reference": r, "total_cents": t, "payment_status": ps})).collect();
-    let (st, b) = ApiResponse::ok(items);
-    Ok((st, Json(serde_json::to_value(b.data).unwrap())))
+    let (st, Json(inner)) = ApiResponse::ok(items);
+    Ok((st, Json(serde_json::to_value(inner.data).unwrap())))
 }
 
 async fn get_one(State(s): State<SharedState>, headers: axum::http::HeaderMap, Path(id): Path<Uuid>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -114,8 +114,8 @@ async fn get_one(State(s): State<SharedState>, headers: axum::http::HeaderMap, P
     if me.role != "admin" && owner != Some(me.user_id) {
         return Err(ApiError::Forbidden);
     }
-    let (st, b) = ApiResponse::ok(serde_json::json!({"id": id, "reference": reference, "total_cents": total, "payment_status": ps, "fulfilment_status": fs}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"id": id, "reference": reference, "total_cents": total, "payment_status": ps, "fulfilment_status": fs}));
+    Ok((st, Json(inner.data)))
 }
 
 async fn payment_status(State(s): State<SharedState>, headers: axum::http::HeaderMap, Path(id): Path<Uuid>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
@@ -134,6 +134,6 @@ async fn cancel(State(s): State<SharedState>, headers: axum::http::HeaderMap, Pa
         return Err(ApiError::Unprocessable("paid orders cannot be cancelled online".into()));
     }
     sqlx::query("UPDATE orders SET fulfilment_status='cancelled' WHERE id=$1").bind(id).execute(&s.db).await.map_err(|_| ApiError::Internal)?;
-    let (st, b) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
+    Ok((st, Json(inner.data)))
 }

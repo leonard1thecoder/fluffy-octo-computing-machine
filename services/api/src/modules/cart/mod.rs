@@ -35,6 +35,6 @@ async fn quote(State(s): State<SharedState>, Json(body): Json<QuoteReq>) -> ApiR
         } else { 0 };
         subtotal += (price + delta) * (it.qty as i64);
     }
-    let (st, b) = ApiResponse::ok(serde_json::json!({"currency": "ZAR", "subtotal_cents": subtotal}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"currency": "ZAR", "subtotal_cents": subtotal}));
+    Ok((st, Json(inner.data)))
 }

@@ -1,5 +1,4 @@
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use crate::config::Config;

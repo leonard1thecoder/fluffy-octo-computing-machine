@@ -12,6 +12,6 @@ async fn get_quote(State(s): State<SharedState>, Path(id): Path<uuid::Uuid>) -> 
     let items: Vec<(String, i32, i64)> = sqlx::query_as("SELECT description, qty, unit_price_cents FROM catering_quote_items WHERE quote_id=$1")
         .bind(id).fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
     let lines: Vec<_> = items.into_iter().map(|(d, q, p)| serde_json::json!({"description": d, "qty": q, "unit_price_cents": p})).collect();
-    let (st, b) = ApiResponse::ok(serde_json::json!({"id": id, "total_cents": total, "status": status, "items": lines}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"id": id, "total_cents": total, "status": status, "items": lines}));
+    Ok((st, Json(inner.data)))
 }

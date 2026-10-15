@@ -14,6 +14,6 @@ async fn get_user(State(s): State<SharedState>, headers: axum::http::HeaderMap, 
     let rec: Option<(String, String, String)> = sqlx::query_as("SELECT email, full_name, role::text FROM users WHERE id=$1")
         .bind(id).fetch_optional(&s.db).await.map_err(|_| ApiError::Internal)?;
     let Some((email, full_name, role)) = rec else { return Err(ApiError::NotFound) };
-    let (st, b) = ApiResponse::ok(serde_json::json!({"id": id, "email": email, "full_name": full_name, "role": role}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"id": id, "email": email, "full_name": full_name, "role": role}));
+    Ok((st, Json(inner.data)))
 }
