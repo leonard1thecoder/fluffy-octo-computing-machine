@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use anyhow::Context;
+
 use crate::config::Config;
 use crate::integrations::brevo::BrevoClient;
 use sqlx::PgPool;
@@ -15,7 +17,11 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new(cfg: Config, db: PgPool) -> anyhow::Result<Arc<Self>> {
-        let redis = redis::Client::open(cfg.redis_url.clone())?;
+        let redis = redis::Client::open(cfg.redis_url.clone()).with_context(|| {
+            "REDIS_URL did not parse; expected a Redis TCP URL like \
+             rediss://default:PASSWORD@host:6379 (Upstash: use the Redis endpoint, \
+             not the https:// REST endpoint)"
+        })?;
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .user_agent("nhlanganiso-api/0.1")
