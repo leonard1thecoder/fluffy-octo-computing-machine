@@ -12,7 +12,7 @@ pub async fn connect(cfg: &Config) -> anyhow::Result<sqlx::PgPool> {
     //
     // Precedence: explicit DATABASE_STATEMENT_CACHE_SIZE wins; otherwise auto-disable
     // (size 0) when a :6543 pooler URL is detected; otherwise leave the driver default.
-    match cfg.database_statement_cache_capacity {
+    match cfg.database_statement_cache_size {
         Some(size) => {
             opts = opts.statement_cache_capacity(size);
         }
