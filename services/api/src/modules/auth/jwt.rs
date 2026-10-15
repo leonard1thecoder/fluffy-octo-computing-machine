@@ -28,8 +28,8 @@ pub fn mint_access(user_id: Uuid, cfg: &Config) -> anyhow::Result<String> {
 
 pub fn verify_access(token: &str, cfg: &Config) -> anyhow::Result<Claims> {
     let mut v = Validation::new(jsonwebtoken::Algorithm::HS256);
-    v.set_issuer(&[cfg.jwt_issuer.clone()]);
-    v.set_audience(&[cfg.jwt_audience.clone()]);
+    v.set_issuer(std::slice::from_ref(&cfg.jwt_issuer));
+    v.set_audience(std::slice::from_ref(&cfg.jwt_audience));
     v.leeway = 30;
     let data = decode::<Claims>(token, &DecodingKey::from_secret(cfg.jwt_secret.as_bytes()), &v)?;
     Ok(data.claims)

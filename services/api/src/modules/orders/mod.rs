@@ -31,7 +31,7 @@ struct CreateReq {
 struct Item { product_id: Uuid, variant_id: Option<Uuid>, qty: i32 }
 
 fn order_ref() -> String {
-    format!("NHL-{}-{}", chrono::Utc::now().format("%Y%m%d"), &Uuid::new_v4().to_string()[..8].to_uppercase())
+    format!("NHL-{}-{}", chrono::Utc::now().format("%Y%m%d"), Uuid::new_v4().to_string()[..8].to_uppercase())
 }
 
 async fn create(State(s): State<SharedState>, headers: axum::http::HeaderMap, Json(body): Json<CreateReq>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {

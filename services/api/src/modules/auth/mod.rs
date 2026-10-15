@@ -16,6 +16,9 @@ use crate::{
     workers::email_outbox,
 };
 
+type RefreshRow = (Uuid, Uuid, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>, Uuid);
+type SessionRow = (Uuid, chrono::DateTime<Utc>, Option<String>, Option<String>);
+
 pub fn router() -> Router<SharedState> {
     // Protected routes need a stateful auth middleware; build without state here
     // and let `app.rs` supply it via `.with_state`. We attach auth inside handlers
@@ -187,7 +190,7 @@ async fn refresh(
 ) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
     let presented_hash = jwt::hash_token(&body.refresh_token);
     let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
-    let rec: Option<(Uuid, Uuid, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>, Uuid)> = sqlx::query_as(
+    let rec: Option<RefreshRow> = sqlx::query_as(
         "SELECT id, user_id, expires_at, revoked_at, user_id FROM refresh_tokens WHERE token_hash=$1 FOR UPDATE",
     )
     .bind(&presented_hash)
@@ -252,7 +255,7 @@ async fn me(State(s): State<SharedState>, headers: axum::http::HeaderMap) -> Api
 
 async fn list_sessions(State(s): State<SharedState>, headers: axum::http::HeaderMap) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
     let user = bearer_user(&s, &headers).await?;
-    let rows: Vec<(Uuid, chrono::DateTime<Utc>, Option<String>, Option<String>)> = sqlx::query_as(
+    let rows: Vec<SessionRow> = sqlx::query_as(
         "SELECT id, created_at, user_agent, ip FROM refresh_tokens WHERE user_id=$1 AND revoked_at IS NULL AND expires_at > now() ORDER BY created_at DESC",
     )
     .bind(user.user_id).fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
