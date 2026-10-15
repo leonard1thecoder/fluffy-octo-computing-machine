@@ -1,7 +1,7 @@
+use crate::config::Config;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::config::Config;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -23,7 +23,11 @@ pub fn mint_access(user_id: Uuid, cfg: &Config) -> anyhow::Result<String> {
         iat: now,
         jti: Uuid::new_v4().to_string(),
     };
-    Ok(encode(&Header::new(jsonwebtoken::Algorithm::HS256), &claims, &EncodingKey::from_secret(cfg.jwt_secret.as_bytes()))?)
+    Ok(encode(
+        &Header::new(jsonwebtoken::Algorithm::HS256),
+        &claims,
+        &EncodingKey::from_secret(cfg.jwt_secret.as_bytes()),
+    )?)
 }
 
 pub fn verify_access(token: &str, cfg: &Config) -> anyhow::Result<Claims> {
@@ -31,7 +35,11 @@ pub fn verify_access(token: &str, cfg: &Config) -> anyhow::Result<Claims> {
     v.set_issuer(std::slice::from_ref(&cfg.jwt_issuer));
     v.set_audience(std::slice::from_ref(&cfg.jwt_audience));
     v.leeway = 30;
-    let data = decode::<Claims>(token, &DecodingKey::from_secret(cfg.jwt_secret.as_bytes()), &v)?;
+    let data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(cfg.jwt_secret.as_bytes()),
+        &v,
+    )?;
     Ok(data.claims)
 }
 

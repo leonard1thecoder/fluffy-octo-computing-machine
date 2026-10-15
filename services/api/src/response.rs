@@ -26,8 +26,22 @@ pub struct Paged<T: Serialize> {
 }
 
 #[allow(dead_code)]
-pub fn paged<T: Serialize>(items: Vec<T>, page: u32, per_page: u32, total: i64) -> impl IntoResponse {
-    let (status, body) = ApiResponse::ok(Paged { items, page, per_page, total });
+pub fn paged<T: Serialize>(
+    items: Vec<T>,
+    page: u32,
+    per_page: u32,
+    total: i64,
+) -> impl IntoResponse {
+    let (status, body) = ApiResponse::ok(Paged {
+        items,
+        page,
+        per_page,
+        total,
+    });
     let meta = serde_json::json!({"page": page, "per_page": per_page, "total": total});
-    (status, Json(serde_json::json!({"data": body.0.data, "meta": meta}))).into_response()
+    (
+        status,
+        Json(serde_json::json!({"data": body.0.data, "meta": meta})),
+    )
+        .into_response()
 }

@@ -7,7 +7,9 @@ pub async fn run(state: SharedState) {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
     loop {
         interval.tick().await;
-        let _ = process_batch(&state).await.map_err(|e| tracing::warn!(error=%e, "outbox batch failed"));
+        let _ = process_batch(&state)
+            .await
+            .map_err(|e| tracing::warn!(error=%e, "outbox batch failed"));
     }
 }
 
@@ -45,16 +47,20 @@ pub async fn enqueue(
     subject: &str,
     body_html: &str,
 ) -> anyhow::Result<()> {
-    sqlx::query(
-        "INSERT INTO email_outbox (recipient, subject, body_html) VALUES ($1,$2,$3)",
-    )
-    .bind(recipient).bind(subject).bind(body_html)
-    .execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO email_outbox (recipient, subject, body_html) VALUES ($1,$2,$3)")
+        .bind(recipient)
+        .bind(subject)
+        .bind(body_html)
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }
 
 pub fn escape_html(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 pub fn branded_template(title: &str, inner: &str) -> String {

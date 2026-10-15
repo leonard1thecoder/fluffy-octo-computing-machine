@@ -1,8 +1,11 @@
-use axum::{extract::Request, middleware::Next, response::Response};
 use crate::{errors::ApiError, middleware::authentication::AuthUser};
+use axum::{extract::Request, middleware::Next, response::Response};
 
 pub async fn require_admin(req: Request, next: Next) -> Result<Response, ApiError> {
-    let u = req.extensions().get::<AuthUser>().ok_or(ApiError::Unauthorized)?;
+    let u = req
+        .extensions()
+        .get::<AuthUser>()
+        .ok_or(ApiError::Unauthorized)?;
     if u.role != "admin" {
         return Err(ApiError::Forbidden);
     }

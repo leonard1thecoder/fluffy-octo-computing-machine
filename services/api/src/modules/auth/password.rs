@@ -1,4 +1,7 @@
-use argon2::{password_hash::{rand_core::OsRng, SaltString}, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use argon2::{
+    password_hash::{rand_core::OsRng, SaltString},
+    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+};
 
 pub fn hash(password: &str) -> anyhow::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
@@ -9,6 +12,10 @@ pub fn hash(password: &str) -> anyhow::Result<String> {
 }
 
 pub fn verify(password: &str, hash: &str) -> bool {
-    let Ok(parsed) = PasswordHash::new(hash) else { return false };
-    Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok()
+    let Ok(parsed) = PasswordHash::new(hash) else {
+        return false;
+    };
+    Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok()
 }

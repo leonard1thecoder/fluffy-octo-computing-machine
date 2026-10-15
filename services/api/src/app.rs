@@ -7,12 +7,27 @@ use tower_http::{
 
 pub fn router(state: SharedState) -> Router {
     let cors = CorsLayer::new()
-        .allow_origin(crate::middleware::cors::allowed_origins(state.cfg.cors_allowed_origins.clone()))
-        .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PATCH, axum::http::Method::DELETE, axum::http::Method::PUT])
-        .allow_headers([axum::http::header::AUTHORIZATION, axum::http::header::CONTENT_TYPE, axum::http::header::ACCEPT]);
+        .allow_origin(crate::middleware::cors::allowed_origins(
+            state.cfg.cors_allowed_origins.clone(),
+        ))
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PATCH,
+            axum::http::Method::DELETE,
+            axum::http::Method::PUT,
+        ])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+        ]);
 
     Router::new()
-        .route("/api/v1/health/live", get(|| async { (StatusCode::OK, "ok") }))
+        .route(
+            "/api/v1/health/live",
+            get(|| async { (StatusCode::OK, "ok") }),
+        )
         .route("/api/v1/health/ready", get(ready))
         .merge(crate::modules::auth::router())
         .merge(crate::modules::users::router())
@@ -30,7 +45,10 @@ pub fn router(state: SharedState) -> Router {
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
-        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(30)))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(30),
+        ))
         .with_state(state)
 }
 

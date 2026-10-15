@@ -26,7 +26,13 @@ impl AppState {
             cfg.brevo_sender_email.clone(),
             cfg.brevo_sender_name.clone(),
         );
-        Ok(Arc::new(Self { cfg, db, redis, http, brevo }))
+        Ok(Arc::new(Self {
+            cfg,
+            db,
+            redis,
+            http,
+            brevo,
+        }))
     }
 }
 

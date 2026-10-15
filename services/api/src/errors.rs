@@ -76,14 +76,17 @@ impl IntoResponse for ApiError {
         }
         let mut res = (
             self.status(),
-            Json(ErrBody { code: self.code(), message, fields, request_id }),
+            Json(ErrBody {
+                code: self.code(),
+                message,
+                fields,
+                request_id,
+            }),
         )
             .into_response();
         if let ApiError::RateLimited { retry_after_secs } = &self {
-            res.headers_mut().insert(
-                "retry-after",
-                retry_after_secs.to_string().parse().unwrap(),
-            );
+            res.headers_mut()
+                .insert("retry-after", retry_after_secs.to_string().parse().unwrap());
         }
         res
     }
