@@ -49,18 +49,24 @@ impl Config {
         let jwt_secret = req("JWT_SECRET")?;
         if is_prod {
             anyhow::ensure!(jwt_secret.len() >= 32, "JWT_SECRET too short in production");
+            for v in ["DATABASE_URL", "REDIS_URL"] {
+                let val = req(v)?;
+                anyhow::ensure!(!val.trim().is_empty(), "{v} must not be empty in production");
+            }
+            // Merchant integrations are warned, not fatal: the service must boot
+            // (and pass health checks) before Brevo/PayFast keys are entered.
+            // Related features fail loudly at use-time until configured.
             for v in [
-                "DATABASE_URL",
-                "REDIS_URL",
                 "BREVO_API_KEY",
                 "PAYFAST_MERCHANT_ID",
                 "PAYFAST_MERCHANT_KEY",
             ] {
-                let val = req(v)?;
-                anyhow::ensure!(
-                    !val.trim().is_empty(),
-                    "{v} must not be empty in production"
-                );
+                match std::env::var(v) {
+                    Ok(val) if !val.trim().is_empty() => {}
+                    _ => tracing::warn!(
+                        "{v} is empty in production; email/payments will fail until it is set"
+                    ),
+                }
             }
             if std::env::var("PAYFAST_MODE").unwrap_or_default() == "sandbox" {
                 tracing::warn!("PAYFAST_MODE=sandbox while APP_ENV=production");
