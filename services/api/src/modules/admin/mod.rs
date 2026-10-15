@@ -15,7 +15,10 @@ use serde::Deserialize;
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/admin/orders", get(list_orders))
-        .route("/api/v1/admin/orders/{id}/fulfilment", patch(set_fulfilment))
+        .route(
+            "/api/v1/admin/orders/{id}/fulfilment",
+            patch(set_fulfilment),
+        )
         .route("/api/v1/admin/reports/summary", get(summary))
         .route("/api/v1/admin/audit-logs", get(audit))
 }
