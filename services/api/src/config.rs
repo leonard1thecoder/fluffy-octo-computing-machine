@@ -85,7 +85,17 @@ impl Config {
         };
         Ok(Self {
             app_env,
-            bind_addr: std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
+            bind_addr: std::env::var("BIND_ADDR")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| {
+                    // Container hosts (Render, Railway, Fly.io) inject PORT;
+                    // honor it unless BIND_ADDR is explicitly set.
+                    match std::env::var("PORT") {
+                        Ok(p) if !p.trim().is_empty() => format!("0.0.0.0:{p}"),
+                        _ => "0.0.0.0:8080".into(),
+                    }
+                }),
             database_url: req("DATABASE_URL")?,
             database_max_connections: std::env::var("DATABASE_MAX_CONNECTIONS")
                 .ok()
