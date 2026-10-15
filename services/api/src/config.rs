@@ -51,7 +51,8 @@ impl Config {
         let jwt_secret = req("JWT_SECRET")?;
         if is_prod {
             anyhow::ensure!(jwt_secret.len() >= 32, "JWT_SECRET too short in production");
-            for v in ["DATABASE_URL"] {
+            {
+                let v = "DATABASE_URL";
                 let val = req(v)?;
                 anyhow::ensure!(
                     !val.trim().is_empty(),
