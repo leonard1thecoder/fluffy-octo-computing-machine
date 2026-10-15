@@ -1,7 +1,9 @@
-use axum::{Router, http::StatusCode, middleware::from_fn, routing::get};
-use std::time::Duration;
-use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use crate::state::SharedState;
+use axum::{http::StatusCode, middleware::from_fn, routing::get, Router};
+use std::time::Duration;
+use tower_http::{
+    cors::CorsLayer, limit::RequestBodyLimitLayer, timeout::TimeoutLayer, trace::TraceLayer,
+};
 
 pub fn router(state: SharedState) -> Router {
     let cors = CorsLayer::new()

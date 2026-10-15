@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::{Path, State}, http::StatusCode, routing::{get, post}};
+use axum::{extract::{Path, State}, http::StatusCode, routing::{get, post}, Json, Router};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;

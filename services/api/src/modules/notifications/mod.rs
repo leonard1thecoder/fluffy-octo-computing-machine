@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
+use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
 use crate::{errors::{ApiError, ApiResult}, middleware::authentication::user_from_headers, response::ApiResponse, state::SharedState};
 
 pub fn router() -> Router<SharedState> {
