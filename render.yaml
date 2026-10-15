@@ -6,8 +6,7 @@ services:
   - type: web
     name: nhlanganiso-api
     runtime: docker
-    dockerfilePath: ./services/api/Dockerfile
-    dockerContext: ./services/api
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /api/v1/health/ready
     # Free plans sleep; PayFast ITN needs an always-reachable HTTPS endpoint.
     plan: starter

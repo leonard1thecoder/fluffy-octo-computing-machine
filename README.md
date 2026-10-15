@@ -10,7 +10,8 @@ Currency: ZAR (integer cents internally, `%.2f` only at PayFast boundary).
 
 ```
 nhlanganiso/
-  docker-compose.yml
+  Dockerfile           # container image (build context: repo root)
+  render.yaml          # Render Blueprint (API + Postgres + Redis)
   contracts/openapi.yaml
   services/api/        # Rust service
 ```
@@ -19,9 +20,11 @@ nhlanganiso/
 
 ```bash
 cp services/api/.env.example services/api/.env
-# edit secrets: JWT_SECRET (openssl rand -base64 48), DATABASE_URL, REDIS_URL,
-# BREVO_API_KEY, PAYFAST_* , PUBLIC_* , CORS_ALLOWED_ORIGINS
-docker compose up --build
+# edit secrets: JWT_SECRET (openssl rand -base64 48), DATABASE_URL (Supabase
+# session pooler), REDIS_URL (Upstash or local), BREVO_API_KEY, PAYFAST_*,
+# PUBLIC_*, CORS_ALLOWED_ORIGINS
+# local Redis if needed: docker run -d -p 6379:6379 redis:7-alpine
+cargo run --manifest-path services/api/Cargo.toml
 # migrations run automatically on boot (sqlx::migrate!)
 curl http://localhost:8080/api/v1/health/ready
 ```
@@ -31,7 +34,7 @@ curl http://localhost:8080/api/v1/health/ready
 - **This repo = Rust API container.** Deploy it to a container host:
   [Render](https://render.com) via the included `render.yaml` Blueprint
   (API + Postgres + Redis in one click), or Railway / Fly.io via
-  `services/api/Dockerfile`.
+  `./Dockerfile` (build context: repo root).
 - **Vercel = Next.js frontend only** (the separate web repo). Do not connect
   this backend repo to Vercel: Vercel has no Docker support and no long-lived
   Rust runtime, so whatever framework preset it guesses, the API cannot run there.
@@ -73,9 +76,7 @@ The backend uses the owner/pooler DB role (bypasses RLS); the Supabase
    (The API also runs `sqlx::migrate!` on boot; use the direct/session URL there,
    not `:6543`.)
 6. Redis is still required separately (Supabase has no Redis): use Upstash or
-   self-hosted Redis and set `REDIS_URL`. For compose, replace the `api`
-   `DATABASE_URL`/`REDIS_URL` in `docker-compose.yml` or run the API outside
-   compose with Supabase env.
+   a local `docker run -d -p 6379:6379 redis:7-alpine` and set `REDIS_URL`.
 7. Security: the Rust backend authenticates with its own JWT + owner DB role.
    Do not expose `service_role` keys to the browser; frontend calls the Rust API,
    not PostgREST, so no permissive RLS policies are provided.
