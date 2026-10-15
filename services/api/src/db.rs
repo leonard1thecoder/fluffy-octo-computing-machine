@@ -7,7 +7,10 @@ use crate::config::Config;
 /// Startup dial attempts. Render provisions the API and Postgres simultaneously,
 /// so the first dials routinely fail while the database is still coming up.
 /// Retrying here (instead of crashlooping) also keeps the real error visible.
-const MAX_ATTEMPTS: u32 = 20;
+///
+/// Budget is deliberately under ~30s (platform startup grace periods kill the
+/// container past that and restart it, which retries the whole sequence).
+const MAX_ATTEMPTS: u32 = 8;
 const RETRY_DELAY: Duration = Duration::from_secs(3);
 
 pub async fn connect(cfg: &Config) -> anyhow::Result<sqlx::PgPool> {
