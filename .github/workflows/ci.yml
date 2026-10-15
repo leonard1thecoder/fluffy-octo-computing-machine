@@ -110,7 +110,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres-rustls
+        run: cargo install sqlx-cli --no-default-features --features postgres,rustls
       # DB already created by the service's POSTGRES_DB; apply from a clean slate.
       - run: sqlx migrate run
       - run: sqlx migrate info
