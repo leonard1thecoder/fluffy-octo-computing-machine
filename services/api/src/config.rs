@@ -19,7 +19,9 @@ pub struct Config {
     pub jwt_access_ttl_secs: i64,
     pub jwt_refresh_ttl_secs: i64,
     pub jwt_secret: String,
-    pub redis_url: String,
+    /// Optional. When unset, the service boots without rate limiting
+    /// (fail-open, warned). Set REDIS_URL to enforce distributed limits.
+    pub redis_url: Option<String>,
     pub cors_allowed_origins: Vec<String>,
     pub brevo_api_key: String,
     pub brevo_sender_email: String,
@@ -49,11 +51,20 @@ impl Config {
         let jwt_secret = req("JWT_SECRET")?;
         if is_prod {
             anyhow::ensure!(jwt_secret.len() >= 32, "JWT_SECRET too short in production");
-            for v in ["DATABASE_URL", "REDIS_URL"] {
+            for v in ["DATABASE_URL"] {
                 let val = req(v)?;
                 anyhow::ensure!(
                     !val.trim().is_empty(),
                     "{v} must not be empty in production"
+                );
+            }
+            if std::env::var("REDIS_URL")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .is_none()
+            {
+                tracing::warn!(
+                    "REDIS_URL is empty in production; rate limiting is DISABLED until it is set"
                 );
             }
             // Merchant integrations are warned, not fatal: the service must boot
@@ -124,7 +135,9 @@ impl Config {
                 .parse()
                 .context("JWT_REFRESH_TTL_SECONDS")?,
             jwt_secret,
-            redis_url: req("REDIS_URL")?,
+            redis_url: std::env::var("REDIS_URL")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
             cors_allowed_origins: std::env::var("CORS_ALLOWED_ORIGINS")
                 .unwrap_or_else(|_| "http://localhost:3000".into())
                 .split(',')

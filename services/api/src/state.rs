@@ -10,18 +10,24 @@ use sqlx::PgPool;
 pub struct AppState {
     pub cfg: Config,
     pub db: PgPool,
-    pub redis: redis::Client,
+    pub redis: Option<redis::Client>,
     pub http: reqwest::Client,
     pub brevo: BrevoClient,
 }
 
 impl AppState {
     pub async fn new(cfg: Config, db: PgPool) -> anyhow::Result<Arc<Self>> {
-        let redis = redis::Client::open(cfg.redis_url.clone()).with_context(|| {
-            "REDIS_URL did not parse; expected a Redis TCP URL like \
-             rediss://default:PASSWORD@host:6379 (Upstash: use the Redis endpoint, \
-             not the https:// REST endpoint)"
-        })?;
+        let redis = match cfg.redis_url.clone() {
+            Some(url) => Some(redis::Client::open(url).with_context(|| {
+                "REDIS_URL did not parse; expected a Redis TCP URL like \
+                 rediss://default:PASSWORD@host:6379 (Upstash: use the Redis endpoint, \
+                 not the https:// REST endpoint)"
+            })?),
+            None => {
+                tracing::warn!("REDIS_URL unset; starting WITHOUT rate limiting");
+                None
+            }
+        };
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .user_agent("nhlanganiso-api/0.1")

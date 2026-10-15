@@ -18,11 +18,8 @@ services:
         fromDatabase:
           name: nhlanganiso-db
           property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: nhlanganiso-redis
-          property: connectionString
+      # REDIS_URL intentionally unset: rate limiting stays disabled until you
+      # add a Key Value instance and set REDIS_URL to its connection string.
       - key: DATABASE_MAX_CONNECTIONS
         value: 5
       - key: DATABASE_MIN_CONNECTIONS
@@ -68,6 +65,3 @@ databases:
   - name: nhlanganiso-db
     databaseName: nhlanganiso
     user: nhlanganiso
-
-keyValues:
-  - name: nhlanganiso-redis

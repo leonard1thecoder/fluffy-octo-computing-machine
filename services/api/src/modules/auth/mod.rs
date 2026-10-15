@@ -192,8 +192,8 @@ async fn login(
     body.validate().map_err(|e| ApiError::Validation {
         fields: serde_json::json!(e.to_string()),
     })?;
-    // Redis abuse guard (fail-closed inside check caller handles 503 separately;
-    // here map over-limit to 429).
+    // Login abuse guard (active only when REDIS_URL is set; without Redis the
+    // check passes open and over-limit maps to 429 here).
     if let Ok(passed) =
         crate::middleware::rate_limit::check(&s, &format!("rl:login:{}", addr.ip()), 10, 60).await
     {
