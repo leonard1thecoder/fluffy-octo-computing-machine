@@ -1,5 +1,7 @@
 # Nhlanganiso Catering & Baking — Backend
 
+[![Backend CI](https://github.com/leonard1thecoder/fluffy-octo-computing-machine/actions/workflows/ci.yml/badge.svg)](https://github.com/leonard1thecoder/fluffy-octo-computing-machine/actions/workflows/ci.yml)
+
 Production-oriented Rust (Axum + Tokio + PostgreSQL via SQLx) modular monolith.
 Frontend (Next.js) communicates via versioned REST API under `/api/v1` (see `contracts/openapi.yaml`).
 Currency: ZAR (integer cents internally, `%.2f` only at PayFast boundary).

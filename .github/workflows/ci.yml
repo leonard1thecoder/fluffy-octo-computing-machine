@@ -1,0 +1,140 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  APP_ENV: test
+  BIND_ADDR: 0.0.0.0:8080
+  # Dummy test-only secret (32+ bytes). Real secrets live in deployment env, never here.
+  JWT_SECRET: ci-test-secret-min-32-bytes-long-0123456789
+  JWT_ISSUER: nhlanganiso-api
+  JWT_AUDIENCE: nhlanganiso-web
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # No DATABASE_URL needed: queries are runtime-checked strings, not sqlx! macros.
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nhlanganiso
+          POSTGRES_PASSWORD: nhlanganiso
+          POSTGRES_DB: nhlanganiso
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nhlanganiso"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://nhlanganiso:nhlanganiso@localhost:5432/nhlanganiso
+      REDIS_URL: redis://localhost:6379
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # No --locked until Cargo.lock is committed (run once with cargo locally).
+      - run: cargo test --all-targets
+
+  migrate:
+    name: migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nhlanganiso
+          POSTGRES_PASSWORD: nhlanganiso
+          POSTGRES_DB: nhlanganiso
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nhlanganiso"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://nhlanganiso:nhlanganiso@localhost:5432/nhlanganiso
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres-rustls
+      # DB already created by the service's POSTGRES_DB; apply from a clean slate.
+      - run: sqlx migrate run
+      - run: sqlx migrate info
+
+  contracts:
+    name: openapi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python3 -c "import yaml; yaml.safe_load(open('contracts/openapi.yaml')); print('openapi.yaml OK')"
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy, test, migrate, contracts]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./services/api
+          push: false
+          tags: nhlanganiso-api:ci
