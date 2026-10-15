@@ -33,7 +33,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "request-id", "limit", "timeout", "normalize-path"] }
 tower = { version = "0.5", features = ["util", "limit", "timeout"] }
-redis = { version = "0.27", features = ["tokio-comp", "tls-rustls"] }
+redis = { version = "0.27", features = ["tokio-rustls-comp"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "charset", "rustls-tls"] }
 dotenvy = "0.15"
 anyhow = "1"
