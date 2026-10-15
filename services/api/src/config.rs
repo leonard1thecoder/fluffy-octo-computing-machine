@@ -51,7 +51,10 @@ impl Config {
             anyhow::ensure!(jwt_secret.len() >= 32, "JWT_SECRET too short in production");
             for v in ["DATABASE_URL", "REDIS_URL"] {
                 let val = req(v)?;
-                anyhow::ensure!(!val.trim().is_empty(), "{v} must not be empty in production");
+                anyhow::ensure!(
+                    !val.trim().is_empty(),
+                    "{v} must not be empty in production"
+                );
             }
             // Merchant integrations are warned, not fatal: the service must boot
             // (and pass health checks) before Brevo/PayFast keys are entered.
