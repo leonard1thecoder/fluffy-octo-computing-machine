@@ -24,6 +24,43 @@ docker compose up --build
 curl http://localhost:8080/api/v1/health/ready
 ```
 
+## Supabase (Postgres)
+
+Supabase **is** Postgres, so SQLx connects with a standard connection string.
+The backend uses the owner/pooler DB role (bypasses RLS); the Supabase
+`anon` key must never be able to read app tables (see `005_supabase_rls.sql`).
+
+1. Create a Supabase project; note the project REF and DB password.
+2. Dashboard > Database > Extensions: enable `pgcrypto` (needed for
+   `gen_random_uuid()`; otherwise `001_identity.sql` fails).
+3. Dashboard > Project Settings > Database: copy the connection strings.
+   - API runtime (recommended): **session-mode pooler**, port `5432`
+     (`...pooler.supabase.com:5432/postgres?sslmode=require`). Supports prepared
+     statements, `FOR UPDATE`, transactions — what this backend uses.
+   - Migrations / `pg_dump`: **direct** connection
+     (`db.[REF].supabase.co:5432/postgres?sslmode=require`). Never migrate over
+     the `:6543` transaction pooler.
+   - Avoid the `:6543` transaction pooler for this long-lived service. If you
+     must use it, set `DATABASE_STATEMENT_CACHE_SIZE=0` (auto-applied when the
+     URL contains `:6543`; Supavisor Tx mode rejects prepared statements).
+4. Set `DATABASE_URL` to the session-pooler URL (`?sslmode=require`).
+   Keep the pool small against the shared pooler: `DATABASE_MAX_CONNECTIONS=5`,
+   `DATABASE_MIN_CONNECTIONS=0`.
+5. Apply migrations with the direct URL:
+   ```bash
+   cargo install sqlx-cli --no-default-features --features postgres-rustls
+   DATABASE_URL="<direct-url>" sqlx migrate run --source services/api/migrations
+   ```
+   (The API also runs `sqlx::migrate!` on boot; use the direct/session URL there,
+   not `:6543`.)
+6. Redis is still required separately (Supabase has no Redis): use Upstash or
+   self-hosted Redis and set `REDIS_URL`. For compose, replace the `api`
+   `DATABASE_URL`/`REDIS_URL` in `docker-compose.yml` or run the API outside
+   compose with Supabase env.
+7. Security: the Rust backend authenticates with its own JWT + owner DB role.
+   Do not expose `service_role` keys to the browser; frontend calls the Rust API,
+   not PostgREST, so no permissive RLS policies are provided.
+
 ## Checks (require Rust toolchain + Postgres + Redis)
 
 ```bash

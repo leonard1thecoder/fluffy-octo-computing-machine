@@ -5,6 +5,15 @@ pub struct Config {
     pub app_env: String,
     pub bind_addr: String,
     pub database_url: String,
+    pub database_max_connections: u32,
+    pub database_min_connections: u32,
+    /// Override sqlx prepared-statement cache size. `None` = auto:
+    /// 0 when a :6543 transaction pooler is detected, driver default otherwise.
+    pub database_statement_cache_size: Option<usize>,
+    /// Optional Supabase project URL (https://[REF].supabase.co). Not used for DB
+    /// connectivity (DATABASE_URL is authoritative) — kept for future Supabase
+    /// Auth/PostgREST interop and operational clarity.
+    pub supabase_url: String,
     pub jwt_issuer: String,
     pub jwt_audience: String,
     pub jwt_access_ttl_secs: i64,
@@ -68,6 +77,21 @@ impl Config {
             app_env,
             bind_addr: std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
             database_url: req("DATABASE_URL")?,
+            database_max_connections: std::env::var("DATABASE_MAX_CONNECTIONS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
+            database_min_connections: std::env::var("DATABASE_MIN_CONNECTIONS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(2),
+            database_statement_cache_size: std::env::var("DATABASE_STATEMENT_CACHE_SIZE")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .map(|v| v.parse())
+                .transpose()
+                .context("DATABASE_STATEMENT_CACHE_SIZE")?,
+            supabase_url: std::env::var("SUPABASE_URL").unwrap_or_default(),
             jwt_issuer: std::env::var("JWT_ISSUER").unwrap_or_else(|_| "nhlanganiso-api".into()),
             jwt_audience: std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "nhlanganiso-web".into()),
             jwt_access_ttl_secs: std::env::var("JWT_ACCESS_TTL_SECONDS")
@@ -110,6 +134,20 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .collect(),
         })
+    }
+}
+
+impl Config {
+    /// True when DATABASE_URL points at Supabase (direct or pooler).
+    pub fn uses_supabase(&self) -> bool {
+        let u = self.database_url.to_lowercase();
+        u.contains("supabase.co") || u.contains("pooler.supabase")
+    }
+
+    /// True for transaction-mode poolers (Supavisor/PgBouncer Tx, port 6543),
+    /// where prepared statements are unsupported and must be disabled.
+    pub fn uses_supabase_tx_pooler(&self) -> bool {
+        self.database_url.contains(":6543")
     }
 }
 

@@ -34,6 +34,10 @@ services:
     env_file: ./services/api/.env
     environment:
       BIND_ADDR: 0.0.0.0:8080
+      # Local dev default (compose network). To use Supabase instead, replace with
+      # your SESSION-pooler URL (...pooler.supabase.com:5432...?sslmode=require)
+      # and stop/remove the postgres service below. Redis is still required
+      # (Supabase has no Redis — use Upstash/Redis Cloud and set REDIS_URL in .env).
       DATABASE_URL: postgres://nhlanganiso:nhlanganiso@postgres:5432/nhlanganiso
       REDIS_URL: redis://redis:6379
     ports:

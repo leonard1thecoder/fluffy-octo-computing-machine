@@ -1,3 +1,5 @@
+-- Local: creates pgcrypto in public. Supabase: enable pgcrypto once via
+-- Dashboard > Database > Extensions (then this is a harmless no-op).
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 DO $$ BEGIN CREATE TYPE user_role AS ENUM ('customer','admin'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
