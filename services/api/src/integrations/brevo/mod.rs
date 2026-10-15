@@ -9,15 +9,38 @@ pub struct BrevoClient {
 }
 
 #[derive(Serialize)]
-struct Sender { email: String, name: String }
+struct Sender {
+    email: String,
+    name: String,
+}
 #[derive(Serialize)]
-struct To { email: String }
+struct To {
+    email: String,
+}
 #[derive(Serialize)]
-struct Payload { sender: Sender, to: Vec<To>, subject: String, #[serde(rename = "htmlContent")] html: String, #[serde(rename = "textContent")] text: String }
+struct Payload {
+    sender: Sender,
+    to: Vec<To>,
+    subject: String,
+    #[serde(rename = "htmlContent")]
+    html: String,
+    #[serde(rename = "textContent")]
+    text: String,
+}
 
 impl BrevoClient {
-    pub fn new(http: reqwest::Client, api_key: String, sender_email: String, sender_name: String) -> Self {
-        Self { http, api_key, sender_email, sender_name }
+    pub fn new(
+        http: reqwest::Client,
+        api_key: String,
+        sender_email: String,
+        sender_name: String,
+    ) -> Self {
+        Self {
+            http,
+            api_key,
+            sender_email,
+            sender_name,
+        }
     }
 
     /// POST https://api.brevo.com/v3/smtp/email — returns provider messageId.
@@ -25,23 +48,34 @@ impl BrevoClient {
         if self.api_key.is_empty() {
             anyhow::bail!("BREVO_API_KEY not configured");
         }
-        let res = self.http.post("https://api.brevo.com/v3/smtp/email")
+        let res = self
+            .http
+            .post("https://api.brevo.com/v3/smtp/email")
             .header("api-key", &self.api_key)
             .json(&Payload {
-                sender: Sender { email: self.sender_email.clone(), name: self.sender_name.clone() },
-                to: vec![To { email: to.to_string() }],
+                sender: Sender {
+                    email: self.sender_email.clone(),
+                    name: self.sender_name.clone(),
+                },
+                to: vec![To {
+                    email: to.to_string(),
+                }],
                 subject: subject.to_string(),
                 html: html.to_string(),
                 text: html_to_text(html),
             })
-            .send().await?;
+            .send()
+            .await?;
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
             anyhow::bail!("brevo {status}: {body:.500}");
         }
         let v: serde_json::Value = res.json().await.unwrap_or_default();
-        Ok(v.get("messageId").and_then(|m| m.as_str()).unwrap_or("").to_string())
+        Ok(v.get("messageId")
+            .and_then(|m| m.as_str())
+            .unwrap_or("")
+            .to_string())
     }
 }
 

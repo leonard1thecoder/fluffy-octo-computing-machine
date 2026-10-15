@@ -43,9 +43,7 @@ pub enum PayfastMode {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        let req = |k: &str| {
-            std::env::var(k).with_context(|| format!("missing required env {k}"))
-        };
+        let req = |k: &str| std::env::var(k).with_context(|| format!("missing required env {k}"));
         let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".into());
         let is_prod = app_env == "production";
         let jwt_secret = req("JWT_SECRET")?;
@@ -59,7 +57,10 @@ impl Config {
                 "PAYFAST_MERCHANT_KEY",
             ] {
                 let val = req(v)?;
-                anyhow::ensure!(!val.trim().is_empty(), "{v} must not be empty in production");
+                anyhow::ensure!(
+                    !val.trim().is_empty(),
+                    "{v} must not be empty in production"
+                );
             }
             if std::env::var("PAYFAST_MODE").unwrap_or_default() == "sandbox" {
                 tracing::warn!("PAYFAST_MODE=sandbox while APP_ENV=production");
@@ -93,7 +94,8 @@ impl Config {
                 .context("DATABASE_STATEMENT_CACHE_SIZE")?,
             supabase_url: std::env::var("SUPABASE_URL").unwrap_or_default(),
             jwt_issuer: std::env::var("JWT_ISSUER").unwrap_or_else(|_| "nhlanganiso-api".into()),
-            jwt_audience: std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "nhlanganiso-web".into()),
+            jwt_audience: std::env::var("JWT_AUDIENCE")
+                .unwrap_or_else(|_| "nhlanganiso-web".into()),
             jwt_access_ttl_secs: std::env::var("JWT_ACCESS_TTL_SECONDS")
                 .unwrap_or_else(|_| "900".into())
                 .parse()

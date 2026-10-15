@@ -14,11 +14,11 @@ pub async fn connect(cfg: &Config) -> anyhow::Result<sqlx::PgPool> {
     // (size 0) when a :6543 pooler URL is detected; otherwise leave the driver default.
     match cfg.database_statement_cache_size {
         Some(size) => {
-            opts = opts.statement_cache_size(size);
+            opts = opts.statement_cache_capacity(size);
         }
         None if cfg.uses_supabase_tx_pooler() => {
-            tracing::warn!("transaction-mode pooler detected (:6543); disabling prepared statements (statement_cache_size=0)");
-            opts = opts.statement_cache_size(0);
+            tracing::warn!("transaction-mode pooler detected (:6543); disabling prepared statements (statement_cache_capacity=0)");
+            opts = opts.statement_cache_capacity(0);
         }
         None => {}
     }

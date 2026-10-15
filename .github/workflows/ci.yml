@@ -29,7 +29,7 @@ jobs:
       run:
         working-directory: services/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -42,7 +42,7 @@ jobs:
       run:
         working-directory: services/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -79,11 +79,11 @@ jobs:
       run:
         working-directory: services/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # No --locked until Cargo.lock is committed (run once with cargo locally).
-      - run: cargo test --all-targets
+      # Cargo.lock is committed, so dependencies are pinned and reproducible.
+      - run: cargo test --all-targets --locked
 
   migrate:
     name: migrations
@@ -106,11 +106,11 @@ jobs:
       run:
         working-directory: services/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres-rustls
+        run: cargo install sqlx-cli --no-default-features --features postgres,rustls
       # DB already created by the service's POSTGRES_DB; apply from a clean slate.
       - run: sqlx migrate run
       - run: sqlx migrate info
@@ -119,7 +119,7 @@ jobs:
     name: openapi
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

@@ -1,7 +1,3 @@
-use axum::{Json, Router, extract::{ConnectInfo, State}, http::StatusCode, routing::{get, post}};
-use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
-use uuid::Uuid;
 use crate::{
     errors::{ApiError, ApiResult},
     integrations::payfast as pf,
@@ -10,6 +6,15 @@ use crate::{
     state::SharedState,
     workers::email_outbox,
 };
+use axum::{
+    extract::{ConnectInfo, State},
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
+use uuid::Uuid;
 
 pub fn router() -> Router<SharedState> {
     Router::new()
@@ -34,13 +39,22 @@ struct CheckoutRes {
 
 /// Build hosted-checkout fields from trusted server-side order totals.
 /// Never trust browser amounts.
-async fn checkout(State(s): State<SharedState>, headers: axum::http::HeaderMap, Json(body): Json<CheckoutReq>) -> ApiResult<(StatusCode, Json<CheckoutRes>)> {
+async fn checkout(
+    State(s): State<SharedState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<CheckoutReq>,
+) -> ApiResult<(StatusCode, Json<CheckoutRes>)> {
     let me = user_from_headers(&s, &headers).await.ok();
     let rec: Option<(Option<Uuid>, i64, String, String)> = sqlx::query_as(
         "SELECT user_id, total_cents, payment_status::text, reference FROM orders WHERE id=$1",
     )
-    .bind(body.order_id).fetch_optional(&s.db).await.map_err(|_| ApiError::Internal)?;
-    let Some((owner, total_cents, pay_status, reference)) = rec else { return Err(ApiError::NotFound) };
+    .bind(body.order_id)
+    .fetch_optional(&s.db)
+    .await
+    .map_err(|_| ApiError::Internal)?;
+    let Some((owner, total_cents, pay_status, reference)) = rec else {
+        return Err(ApiError::NotFound);
+    };
     if let Some(m) = &me {
         if m.role != "admin" && owner != Some(m.user_id) {
             return Err(ApiError::Forbidden);
@@ -60,12 +74,36 @@ async fn checkout(State(s): State<SharedState>, headers: axum::http::HeaderMap, 
     let mut ordered: Vec<(String, String)> = vec![
         ("merchant_id".into(), s.cfg.payfast_merchant_id.clone()),
         ("merchant_key".into(), s.cfg.payfast_merchant_key.clone()),
-        ("return_url".into(), format!("{}/checkout/success?order={}", s.cfg.public_web_url, body.order_id)),
-        ("cancel_url".into(), format!("{}/checkout/cancel?order={}", s.cfg.public_web_url, body.order_id)),
-        ("notify_url".into(), format!("{}/api/v1/payments/payfast/itn", s.cfg.public_api_url)),
-        ("name_first".into(), body.name_first.clone().unwrap_or_default()),
-        ("name_last".into(), body.name_last.clone().unwrap_or_default()),
-        ("email_address".into(), body.email_address.clone().unwrap_or_default()),
+        (
+            "return_url".into(),
+            format!(
+                "{}/checkout/success?order={}",
+                s.cfg.public_web_url, body.order_id
+            ),
+        ),
+        (
+            "cancel_url".into(),
+            format!(
+                "{}/checkout/cancel?order={}",
+                s.cfg.public_web_url, body.order_id
+            ),
+        ),
+        (
+            "notify_url".into(),
+            format!("{}/api/v1/payments/payfast/itn", s.cfg.public_api_url),
+        ),
+        (
+            "name_first".into(),
+            body.name_first.clone().unwrap_or_default(),
+        ),
+        (
+            "name_last".into(),
+            body.name_last.clone().unwrap_or_default(),
+        ),
+        (
+            "email_address".into(),
+            body.email_address.clone().unwrap_or_default(),
+        ),
         ("m_payment_id".into(), m_payment_id.clone()),
         ("amount".into(), pf::cents_to_payfast(total_cents)),
         ("item_name".into(), format!("Order {reference}")),
@@ -76,20 +114,34 @@ async fn checkout(State(s): State<SharedState>, headers: axum::http::HeaderMap, 
     let mut fields: std::collections::HashMap<String, String> = ordered.into_iter().collect();
     fields.insert("signature".into(), sig);
     let _ = payment_id;
-    Ok((StatusCode::OK, Json(CheckoutRes { checkout_url: s.cfg.payfast_mode.checkout_url(), fields })))
+    Ok((
+        StatusCode::OK,
+        Json(CheckoutRes {
+            checkout_url: s.cfg.payfast_mode.checkout_url(),
+            fields,
+        }),
+    ))
 }
 
-async fn get_payment(State(s): State<SharedState>, headers: axum::http::HeaderMap, axum::extract::Path(id): axum::extract::Path<Uuid>) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+async fn get_payment(
+    State(s): State<SharedState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
     let me = user_from_headers(&s, &headers).await?;
     let rec: Option<(Option<Uuid>, String, i64)> = sqlx::query_as(
         "SELECT o.user_id, p.status::text, p.expected_amount_cents FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.id=$1",
     ).bind(id).fetch_optional(&s.db).await.map_err(|_| ApiError::Internal)?;
-    let Some((owner, status, amount)) = rec else { return Err(ApiError::NotFound) };
+    let Some((owner, status, amount)) = rec else {
+        return Err(ApiError::NotFound);
+    };
     if me.role != "admin" && owner != Some(me.user_id) {
         return Err(ApiError::Forbidden);
     }
-    let (st, b) = ApiResponse::ok(serde_json::json!({"id": id, "status": status, "expected_amount_cents": amount}));
-    Ok((st, Json(b.data)))
+    let (st, Json(inner)) = ApiResponse::ok(
+        serde_json::json!({"id": id, "status": status, "expected_amount_cents": amount}),
+    );
+    Ok((st, Json(inner.data)))
 }
 
 /// PayFast ITN: `application/x-www-form-urlencoded`. Full validation:
@@ -115,9 +167,13 @@ async fn itn(
         return Err(ApiError::Forbidden);
     }
     // 3. Server validation: POST back to PayFast, expect "VALID".
-    let valid = server_validate(&s, &ordered).await.map_err(|_| ApiError::Internal)?;
+    let valid = server_validate(&s, &ordered)
+        .await
+        .map_err(|_| ApiError::Internal)?;
     if !valid {
-        return Err(ApiError::Unprocessable("payfast server validation failed".into()));
+        return Err(ApiError::Unprocessable(
+            "payfast server validation failed".into(),
+        ));
     }
     // 4-6. Merchant + payment lookup
     let merchant_id = map.get("merchant_id").cloned().unwrap_or_default();
@@ -126,7 +182,11 @@ async fn itn(
     }
     let m_payment_id = map.get("m_payment_id").cloned().unwrap_or_default();
     let pf_txn_id = map.get("pf_payment_id").cloned().unwrap_or_default();
-    let gross = map.get("amount_gross").or(map.get("amount")).cloned().unwrap_or_default();
+    let gross = map
+        .get("amount_gross")
+        .or(map.get("amount"))
+        .cloned()
+        .unwrap_or_default();
     let pay_status = map.get("payment_status").cloned().unwrap_or_default();
 
     let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
@@ -151,7 +211,11 @@ async fn itn(
     }
     // 8. Only COMPLETE settles; others record without fulfilment side-effects.
     if pay_status != "COMPLETE" {
-        sqlx::query("UPDATE payments SET status='failed' WHERE id=$1 AND status='pending'").bind(payment_id).execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
+        sqlx::query("UPDATE payments SET status='failed' WHERE id=$1 AND status='pending'")
+            .bind(payment_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| ApiError::Internal)?;
         sqlx::query("INSERT INTO payment_events (payment_id, merchant_payment_id, provider_txn_id, payload, result) VALUES ($1,$2,$3,$4,'non-complete')")
             .bind(payment_id).bind(&m_payment_id).bind(&pf_txn_id).bind(serde_json::json!({"status": pay_status}))
             .execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
@@ -173,17 +237,34 @@ async fn itn(
         return Ok((StatusCode::OK, "OK".into()));
     }
     sqlx::query("UPDATE payments SET status='paid', provider_txn_id=$2, paid_at=now() WHERE id=$1")
-        .bind(payment_id).bind(&pf_txn_id).execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
+        .bind(payment_id)
+        .bind(&pf_txn_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| ApiError::Internal)?;
     sqlx::query("UPDATE orders SET payment_status='paid' WHERE id=$1 AND payment_status<>'paid'")
-        .bind(order_id).execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
+        .bind(order_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| ApiError::Internal)?;
     sqlx::query("INSERT INTO payment_events (payment_id, merchant_payment_id, provider_txn_id, payload, result) VALUES ($1,$2,$3,$4,'paid')")
         .bind(payment_id).bind(&m_payment_id).bind(&pf_txn_id).bind(serde_json::json!({"gross": gross}))
         .execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
     // 12. Receipt email in same transaction (durable outbox).
-    let contact: Option<String> = sqlx::query_scalar("SELECT contact_email FROM orders WHERE id=$1").bind(order_id).fetch_optional(&mut *tx).await.map_err(|_| ApiError::Internal)?;
+    let contact: Option<String> =
+        sqlx::query_scalar("SELECT contact_email FROM orders WHERE id=$1")
+            .bind(order_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|_| ApiError::Internal)?;
     if let Some(email) = contact {
-        let html = email_outbox::branded_template("Payment confirmed", &format!("<p>Payment <b>{}</b> confirmed. Thank you.</p>", pf_txn_id));
-        email_outbox::enqueue(&mut tx, &email, "Payment confirmed — Nhlanganiso", &html).await.map_err(|_| ApiError::Internal)?;
+        let html = email_outbox::branded_template(
+            "Payment confirmed",
+            &format!("<p>Payment <b>{}</b> confirmed. Thank you.</p>", pf_txn_id),
+        );
+        email_outbox::enqueue(&mut tx, &email, "Payment confirmed — Nhlanganiso", &html)
+            .await
+            .map_err(|_| ApiError::Internal)?;
     }
     tx.commit().await.map_err(|_| ApiError::Internal)?;
     Ok((StatusCode::OK, "OK".into()))
@@ -198,7 +279,9 @@ fn parse_form_ordered(body: &str) -> Vec<(String, String)> {
             let v_enc = it.next().unwrap_or("");
             // PayFast posts `+` for space.
             let v_plus = v_enc.replace('+', " ");
-            let v = urlencoding::decode(&v_plus).map(|c| c.into_owned()).unwrap_or(v_plus);
+            let v = urlencoding::decode(&v_plus)
+                .map(|c| c.into_owned())
+                .unwrap_or(v_plus);
             let k_norm = urlencoding::decode(&k).map(|c| c.into_owned()).unwrap_or(k);
             (k_norm, v)
         })
@@ -219,11 +302,18 @@ async fn source_allowed(s: &SharedState, ip: &str) -> bool {
 
 async fn server_validate(s: &SharedState, ordered: &[(String, String)]) -> anyhow::Result<bool> {
     // PayFast expects the exact ITN body posted back for validation.
-    let body: String = ordered.iter().map(|(k, v)| format!("{k}={}", urlencoding::encode(v))).collect::<Vec<_>>().join("&");
-    let res = s.http.post(s.cfg.payfast_mode.validate_url())
+    let body: String = ordered
+        .iter()
+        .map(|(k, v)| format!("{k}={}", urlencoding::encode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+    let res = s
+        .http
+        .post(s.cfg.payfast_mode.validate_url())
         .header("content-type", "application/x-www-form-urlencoded")
         .body(body)
-        .send().await?;
+        .send()
+        .await?;
     let text = res.text().await.unwrap_or_default();
     Ok(text.trim() == "VALID")
 }

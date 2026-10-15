@@ -45,7 +45,6 @@ pub fn signatures_match(expected: &str, received: &str) -> bool {
 fn payfast_encode(v: &str) -> String {
     let enc = urlencoding::encode(v.trim());
     let mut out = String::with_capacity(enc.len());
-    let mut chars = enc.chars().peekable();
     // urlencoding already percent-encodes; fix spaces + uppercase hex
     let tmp = enc.replace("%20", "+");
     let bytes = tmp.as_bytes();
@@ -61,7 +60,6 @@ fn payfast_encode(v: &str) -> String {
             i += 1;
         }
     }
-    let _ = chars;
     out
 }
 

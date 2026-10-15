@@ -19,7 +19,10 @@ fn valid_sandbox_signature_verifies() {
 fn invalid_signature_detected() {
     let ordered = vec![("merchant_id".to_string(), "10000100".to_string())];
     let sig = pf::generate_signature(&ordered, Some("secret"));
-    assert!(!pf::signatures_match(&sig, "deadbeefdeadbeefdeadbeefdeadbeef"));
+    assert!(!pf::signatures_match(
+        &sig,
+        "deadbeefdeadbeefdeadbeefdeadbeef"
+    ));
 }
 
 #[test]
