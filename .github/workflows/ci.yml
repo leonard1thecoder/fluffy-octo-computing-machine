@@ -82,8 +82,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # No --locked until Cargo.lock is committed (run once with cargo locally).
-      - run: cargo test --all-targets
+      # Cargo.lock is committed, so dependencies are pinned and reproducible.
+      - run: cargo test --all-targets --locked
 
   migrate:
     name: migrations
