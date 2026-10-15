@@ -18,14 +18,14 @@ use validator::Validate;
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/catering/requests", post(create_request))
-        .route("/api/v1/catering/requests/:id", get(get_request))
+        .route("/api/v1/catering/requests/{id}", get(get_request))
         .route("/api/v1/admin/catering/requests", get(admin_list))
-        .route("/api/v1/admin/catering/requests/:id", patch(admin_update))
+        .route("/api/v1/admin/catering/requests/{id}", patch(admin_update))
         .route(
-            "/api/v1/admin/catering/requests/:id/quotes",
+            "/api/v1/admin/catering/requests/{id}/quotes",
             post(create_quote),
         )
-        .route("/api/v1/catering/quotes/:id/accept", post(accept_quote))
+        .route("/api/v1/catering/quotes/{id}/accept", post(accept_quote))
 }
 
 #[derive(Deserialize, Validate)]

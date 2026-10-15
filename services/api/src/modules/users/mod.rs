@@ -13,7 +13,7 @@ use axum::{
 use uuid::Uuid;
 
 pub fn router() -> Router<SharedState> {
-    Router::new().route("/api/v1/users/:id", get(get_user))
+    Router::new().route("/api/v1/users/{id}", get(get_user))
 }
 
 async fn get_user(

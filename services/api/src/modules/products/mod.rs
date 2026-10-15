@@ -16,8 +16,8 @@ use validator::Validate;
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/products", get(list).post(create))
-        .route("/api/v1/products/:slug", get(get_by_slug))
-        .route("/api/v1/products/:id/availability", get(availability))
+        .route("/api/v1/products/{slug}", get(get_by_slug))
+        .route("/api/v1/products/{id}/availability", get(availability))
 }
 
 #[derive(Serialize)]

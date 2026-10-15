@@ -19,9 +19,9 @@ pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/orders", post(create).get(mine_alias))
         .route("/api/v1/orders/mine", get(mine_alias))
-        .route("/api/v1/orders/:id", get(get_one))
-        .route("/api/v1/orders/:id/payment-status", get(payment_status))
-        .route("/api/v1/orders/:id/cancel", post(cancel))
+        .route("/api/v1/orders/{id}", get(get_one))
+        .route("/api/v1/orders/{id}/payment-status", get(payment_status))
+        .route("/api/v1/orders/{id}/cancel", post(cancel))
 }
 
 #[derive(Deserialize, Validate)]

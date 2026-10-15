@@ -48,7 +48,7 @@ pub fn router() -> Router<SharedState> {
         .route("/api/v1/auth/logout-all", post(logout_all))
         .route("/api/v1/auth/me", get(me))
         .route("/api/v1/auth/sessions", get(list_sessions))
-        .route("/api/v1/auth/sessions/:id", delete(delete_session))
+        .route("/api/v1/auth/sessions/{id}", delete(delete_session))
         .route("/api/v1/auth/verify-email", get(verify_email))
         .route(
             "/api/v1/auth/password-reset/request",

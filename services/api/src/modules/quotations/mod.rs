@@ -11,7 +11,7 @@ use axum::{
 };
 
 pub fn router() -> Router<SharedState> {
-    Router::new().route("/api/v1/catering/quotes/:id", get(get_quote))
+    Router::new().route("/api/v1/catering/quotes/{id}", get(get_quote))
 }
 
 async fn get_quote(

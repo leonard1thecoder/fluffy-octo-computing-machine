@@ -20,7 +20,7 @@ pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/payments/checkout", post(checkout))
         .route("/api/v1/payments/payfast/itn", post(itn))
-        .route("/api/v1/payments/:id", get(get_payment))
+        .route("/api/v1/payments/{id}", get(get_payment))
 }
 
 #[derive(Deserialize)]
