@@ -1,0 +1,75 @@
+# Render Blueprint — one-click container deploy for the Nhlanganiso Rust API.
+# Dashboard: New > Blueprint > select this repo. Fill every `sync: false` value.
+# Do NOT point Vercel at this repo: Vercel cannot run Docker or long-lived Rust
+# services. Vercel hosts the Next.js frontend; Render (or Railway/Fly.io) hosts this API.
+services:
+  - type: web
+    name: nhlanganiso-api
+    runtime: docker
+    dockerfilePath: ./services/api/Dockerfile
+    dockerContext: ./services/api
+    healthCheckPath: /api/v1/health/ready
+    # Free plans sleep; PayFast ITN needs an always-reachable HTTPS endpoint.
+    plan: starter
+    envVars:
+      - key: APP_ENV
+        value: production
+      # Must match Render's PORT (default 10000).
+      - key: BIND_ADDR
+        value: 0.0.0.0:10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nhlanganiso-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: nhlanganiso-redis
+          property: connectionString
+      - key: DATABASE_MAX_CONNECTIONS
+        value: 5
+      - key: DATABASE_MIN_CONNECTIONS
+        value: 0
+      - key: JWT_ISSUER
+        value: nhlanganiso-api
+      - key: JWT_AUDIENCE
+        value: nhlanganiso-web
+      - key: JWT_ACCESS_TTL_SECONDS
+        value: 900
+      - key: JWT_REFRESH_TTL_SECONDS
+        value: 2592000
+      - key: PAYFAST_MODE
+        value: sandbox
+      - key: PAYFAST_VALIDATE_IP
+        value: true
+      - key: LOG_LEVEL
+        value: info
+      # Fill in via the Render dashboard after first deploy:
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false # your Vercel URL, e.g. https://your-app.vercel.app
+      - key: PUBLIC_WEB_URL
+        sync: false # same Vercel URL
+      - key: PUBLIC_API_URL
+        sync: false # this service's https://....onrender.com URL
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: BREVO_SENDER_NAME
+        sync: false
+      - key: PAYFAST_MERCHANT_ID
+        sync: false
+      - key: PAYFAST_MERCHANT_KEY
+        sync: false
+      - key: PAYFAST_PASSPHRASE
+        sync: false
+
+databases:
+  - name: nhlanganiso-db
+    databaseName: nhlanganiso
+    user: nhlanganiso
+
+keyValues:
+  - name: nhlanganiso-redis

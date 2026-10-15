@@ -26,6 +26,23 @@ docker compose up --build
 curl http://localhost:8080/api/v1/health/ready
 ```
 
+## Where this deploys (read before touching Vercel)
+
+- **This repo = Rust API container.** Deploy it to a container host:
+  [Render](https://render.com) via the included `render.yaml` Blueprint
+  (API + Postgres + Redis in one click), or Railway / Fly.io via
+  `services/api/Dockerfile`.
+- **Vercel = Next.js frontend only** (the separate web repo). Do not connect
+  this backend repo to Vercel: Vercel has no Docker support and no long-lived
+  Rust runtime, so whatever framework preset it guesses, the API cannot run there.
+- **Wire the two together after deploy:**
+  - Frontend: `BACKEND_URL` / `NEXT_PUBLIC_API_URL` = your Render service URL.
+  - Backend: `CORS_ALLOWED_ORIGINS` / `PUBLIC_WEB_URL` = your Vercel URL;
+    `PUBLIC_API_URL` = your Render URL (used for PayFast `notify_url`/
+    `return_url`).
+  - PayFast dashboard `notify_url`:
+    `https://<your-render-service>.onrender.com/api/v1/payments/payfast/itn`.
+
 ## Supabase (Postgres)
 
 Supabase **is** Postgres, so SQLx connects with a standard connection string.
