@@ -1,5 +1,7 @@
 use crate::state::SharedState;
-use axum::{http::StatusCode, middleware::from_fn, routing::get, Router};
+use axum::{
+    http::StatusCode, middleware::from_fn, response::IntoResponse, routing::get, Json, Router,
+};
 use std::time::Duration;
 use tower_http::{
     cors::CorsLayer, limit::RequestBodyLimitLayer, timeout::TimeoutLayer, trace::TraceLayer,
@@ -24,6 +26,7 @@ pub fn router(state: SharedState) -> Router {
         ]);
 
     Router::new()
+        .route("/", get(root))
         .route(
             "/api/v1/health/live",
             get(|| async { (StatusCode::OK, "ok") }),
@@ -50,6 +53,16 @@ pub fn router(state: SharedState) -> Router {
             Duration::from_secs(30),
         ))
         .with_state(state)
+}
+
+async fn root() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "service": "nhlanganiso-api",
+        "version": env!("CARGO_PKG_VERSION"),
+        "health": "/api/v1/health/live",
+        "ready": "/api/v1/health/ready",
+        "docs": "/contracts/openapi.yaml",
+    }))
 }
 
 async fn ready(axum::extract::State(s): axum::extract::State<SharedState>) -> (StatusCode, String) {
