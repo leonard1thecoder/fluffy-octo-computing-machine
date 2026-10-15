@@ -11,6 +11,6 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/target/release/nhlanganiso-api /app/nhlanganiso-api
-COPY migrations ./migrations
+COPY services/api/migrations ./migrations
 EXPOSE 8080
 CMD ["/app/nhlanganiso-api"]
