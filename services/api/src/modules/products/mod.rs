@@ -28,6 +28,8 @@ struct Product {
     price_cents: i64,
     currency: String,
     active: bool,
+    description: String,
+    image_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -47,8 +49,17 @@ async fn list(
     let page = q.page.unwrap_or(1).max(1);
     let per = q.per_page.unwrap_or(20).clamp(1, 100);
     let off = (page - 1) * per;
-    let rows: Vec<(uuid::Uuid, String, String, i64, String, bool)> = sqlx::query_as(
-        "SELECT id, name, slug, price_cents, currency, active FROM products WHERE active=true AND ($1 IS NULL OR name ILIKE '%'||$1||'%') ORDER BY name LIMIT $2 OFFSET $3",
+    let rows: Vec<(
+        uuid::Uuid,
+        String,
+        String,
+        i64,
+        String,
+        bool,
+        String,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT id, name, slug, price_cents, currency, active, description, image_url FROM products WHERE active=true AND ($1 IS NULL OR name ILIKE '%'||$1||'%') ORDER BY name LIMIT $2 OFFSET $3",
     )
     .bind(q.search.clone()).bind(per).bind(off).fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM products WHERE active=true")
@@ -57,14 +68,18 @@ async fn list(
         .map_err(|_| ApiError::Internal)?;
     let items: Vec<Product> = rows
         .into_iter()
-        .map(|(id, name, slug, price_cents, currency, active)| Product {
-            id,
-            name,
-            slug,
-            price_cents,
-            currency,
-            active,
-        })
+        .map(
+            |(id, name, slug, price_cents, currency, active, description, image_url)| Product {
+                id,
+                name,
+                slug,
+                price_cents,
+                currency,
+                active,
+                description,
+                image_url,
+            },
+        )
         .collect();
     Ok((
         StatusCode::OK,
@@ -81,18 +96,18 @@ async fn get_by_slug(
     if slug.len() > 160 || slug.is_empty() {
         return Err(ApiError::NotFound);
     }
-    let rec: Option<(uuid::Uuid, String, String, i64)> = sqlx::query_as(
-        "SELECT id, name, slug, price_cents FROM products WHERE slug=$1 AND active=true",
+    let rec: Option<(uuid::Uuid, String, String, i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, name, slug, price_cents, description, image_url FROM products WHERE slug=$1 AND active=true",
     )
     .bind(&slug)
     .fetch_optional(&s.db)
     .await
     .map_err(|_| ApiError::Internal)?;
-    let Some((id, name, slug, price_cents)) = rec else {
+    let Some((id, name, slug, price_cents, description, image_url)) = rec else {
         return Err(ApiError::NotFound);
     };
     let (st, Json(inner)) = ApiResponse::ok(
-        serde_json::json!({"id": id, "name": name, "slug": slug, "price_cents": price_cents}),
+        serde_json::json!({"id": id, "name": name, "slug": slug, "price_cents": price_cents, "description": description, "image_url": image_url}),
     );
     Ok((st, Json(inner.data)))
 }
@@ -124,6 +139,11 @@ struct CreateReq {
     #[validate(range(min = 0))]
     price_cents: i64,
     category_id: Option<uuid::Uuid>,
+    #[validate(length(max = 5000))]
+    description: Option<String>,
+    #[validate(length(max = 2048))]
+    image_url: Option<String>,
+    active: Option<bool>,
 }
 
 async fn create(
@@ -141,8 +161,11 @@ async fn create(
     if body.price_cents < 0 {
         return Err(ApiError::Unprocessable("price must be >= 0".into()));
     }
-    let id: uuid::Uuid = sqlx::query_scalar("INSERT INTO products (name, slug, price_cents, currency, active, category_id) VALUES ($1,$2,$3,'ZAR',true,$4) RETURNING id")
-        .bind(&body.name).bind(&body.slug).bind(body.price_cents).bind(body.category_id)
+    let id: uuid::Uuid = sqlx::query_scalar("INSERT INTO products (name, slug, description, image_url, price_cents, currency, active, category_id) VALUES ($1,$2,$3,$4,$5,'ZAR',$6,$7) RETURNING id")
+        .bind(&body.name).bind(&body.slug)
+        .bind(body.description.clone().unwrap_or_default())
+        .bind(body.image_url.clone())
+        .bind(body.price_cents).bind(body.active.unwrap_or(true)).bind(body.category_id)
         .fetch_one(&s.db).await.map_err(|_| ApiError::Conflict("slug exists".into()))?;
     let (st, Json(inner)) = ApiResponse::created(serde_json::json!({"id": id}));
     Ok((st, Json(inner.data)))
