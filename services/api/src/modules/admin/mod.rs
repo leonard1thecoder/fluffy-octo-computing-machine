@@ -78,7 +78,7 @@ async fn summary(
         return Err(ApiError::Forbidden);
     }
     let revenue: Option<i64> = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(total_cents),0) FROM orders WHERE payment_status='paid'",
+        "SELECT COALESCE(SUM(total_cents),0)::bigint FROM orders WHERE payment_status='paid'",
     )
     .fetch_one(&s.db)
     .await
