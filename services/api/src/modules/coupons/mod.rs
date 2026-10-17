@@ -266,6 +266,29 @@ async fn validate_coupon(
         ));
     }
 
+    // One coupon, one subscriber: reject if this email already claimed any
+    // coupon, or if this coupon was already claimed by anyone.
+    let already_used: Option<Uuid> =
+        sqlx::query_scalar("SELECT coupon_id FROM coupon_usages WHERE email_normalized=$1 LIMIT 1")
+            .bind(&email)
+            .fetch_optional(&s.db)
+            .await
+            .map_err(|_| ApiError::Internal)?;
+    if already_used.is_some() {
+        return Err(ApiError::Unprocessable(
+            "subscriber already used a coupon".into(),
+        ));
+    }
+    let coupon_claimed: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM coupon_usages WHERE coupon_id=$1 LIMIT 1")
+            .bind(id)
+            .fetch_optional(&s.db)
+            .await
+            .map_err(|_| ApiError::Internal)?;
+    if coupon_claimed.is_some() {
+        return Err(ApiError::Unprocessable("coupon already claimed".into()));
+    }
+
     let discount_amount =
         |subtotal_cents: i64| (subtotal_cents as f64 * discount as f64 / 100.0).round() as i64;
 

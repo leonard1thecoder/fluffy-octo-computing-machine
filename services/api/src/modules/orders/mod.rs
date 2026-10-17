@@ -121,7 +121,7 @@ async fn create(
         let code_upper = code.trim().to_uppercase();
         let rec: Option<(Uuid, i32, Option<chrono::DateTime<chrono::Utc>>, Option<i32>, i32, bool)> =
             sqlx::query_as(
-                "SELECT id, discount_percentage, expires_at, max_usages, usage_count, active FROM coupons WHERE code=$1",
+                "SELECT id, discount_percentage, expires_at, max_usages, usage_count, active FROM coupons WHERE code=$1 FOR UPDATE",
             )
             .bind(&code_upper)
             .fetch_optional(&mut *tx)
@@ -155,6 +155,31 @@ async fn create(
                 "coupon requires a verified subscription".into(),
             ));
         }
+
+        // One coupon, one subscriber: reject if this email already claimed any
+        // coupon, or if this coupon was already claimed by anyone.
+        let already_used: Option<Uuid> = sqlx::query_scalar(
+            "SELECT coupon_id FROM coupon_usages WHERE email_normalized=$1 LIMIT 1",
+        )
+        .bind(&body.contact_email.trim().to_lowercase())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| ApiError::Internal)?;
+        if already_used.is_some() {
+            return Err(ApiError::Unprocessable(
+                "subscriber already used a coupon".into(),
+            ));
+        }
+        let coupon_claimed: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM coupon_usages WHERE coupon_id=$1 LIMIT 1")
+                .bind(cid)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|_| ApiError::Internal)?;
+        if coupon_claimed.is_some() {
+            return Err(ApiError::Unprocessable("coupon already claimed".into()));
+        }
+
         discount_cents = (subtotal as f64 * discount_pct as f64 / 100.0).round() as i64;
         coupon_id = Some(cid);
 
