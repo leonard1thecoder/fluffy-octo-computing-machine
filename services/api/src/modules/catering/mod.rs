@@ -32,14 +32,11 @@ pub fn router() -> Router<SharedState> {
 struct CreateReq {
     #[validate(length(min = 1, max = 160))]
     event_type: String,
-    venue: Option<String>,
-    budget_cents: Option<i64>,
     menu_requirements: Option<String>,
     #[validate(length(min = 1, max = 120))]
     contact_name: String,
     #[validate(email)]
     contact_email: String,
-    contact_phone: Option<String>,
 }
 
 async fn create_request(
@@ -51,15 +48,12 @@ async fn create_request(
     })?;
     let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
     let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO catering_requests (event_type, venue, budget_cents, menu_requirements, contact_name, contact_email, contact_phone, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'new') RETURNING id",
+        "INSERT INTO catering_requests (event_type, menu_requirements, contact_name, contact_email, status) VALUES ($1,$2,$3,$4,'new') RETURNING id",
     )
     .bind(&body.event_type)
-    .bind(&body.venue)
-    .bind(body.budget_cents)
     .bind(&body.menu_requirements)
     .bind(&body.contact_name)
     .bind(&body.contact_email)
-    .bind(&body.contact_phone)
     .fetch_one(&mut *tx)
     .await
     .map_err(|_| ApiError::Internal)?;
