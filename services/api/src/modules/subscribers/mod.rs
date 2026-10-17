@@ -67,12 +67,13 @@ async fn subscribe(
         }
         // Pending: resend verification (replace token).
         let (raw_token, token_hash) = jwt::new_refresh_token(); // reuse secure random + sha256
+        let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
         sqlx::query(
             "UPDATE subscribers SET verification_token_hash=$2, verification_expires_at=now()+interval '24 hours', updated_at=now() WHERE id=$1",
         )
         .bind(id)
         .bind(&token_hash)
-        .execute(&mut s.db.begin().await.map_err(|_| ApiError::Internal)?)
+        .execute(&mut *tx)
         .await
         .map_err(|_| ApiError::Internal)?;
         let link = format!(
@@ -86,7 +87,15 @@ async fn subscribe(
                 link
             ),
         );
-        let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
+        email_outbox::enqueue(
+            &mut tx,
+            &email,
+            "Confirm your Nhlanganiso subscription",
+            &html,
+        )
+        .await
+        .map_err(|_| ApiError::Internal)?;
+        tx.commit().await.map_err(|_| ApiError::Internal)?;
         email_outbox::enqueue(
             &mut tx,
             &email,
