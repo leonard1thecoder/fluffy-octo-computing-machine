@@ -30,10 +30,11 @@ pub fn router() -> Router<SharedState> {
 
 #[derive(Deserialize, Validate)]
 struct CreateReq {
+    #[validate(length(min = 1, max = 160))]
     event_type: String,
-    #[validate(length(min = 1))]
-    event_date: String,
-    guest_count: i32,
+    event_date: Option<String>,
+    #[validate(range(min = 1, max = 5000))]
+    guest_count: Option<i32>,
     venue: Option<String>,
     budget_cents: Option<i64>,
     menu_requirements: Option<String>,
@@ -51,27 +52,37 @@ async fn create_request(
     body.validate().map_err(|e| ApiError::Validation {
         fields: serde_json::json!(e.to_string()),
     })?;
-    if body.guest_count < 1 || body.guest_count > 5000 {
-        return Err(ApiError::Unprocessable("guest_count 1..5000".into()));
-    }
-    let event_date: chrono::NaiveDate = body
+    let event_date: Option<chrono::NaiveDate> = body
         .event_date
-        .parse()
-        .map_err(|_| ApiError::Unprocessable("event_date must be YYYY-MM-DD".into()))?;
+        .as_deref()
+        .map(|s| {
+            s.parse().map_err(|_| ApiError::Unprocessable("event_date must be YYYY-MM-DD".into()))
+        })
+        .transpose()?;
     let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO catering_requests (event_type, event_date, guest_count, venue, budget_cents, menu_requirements, contact_name, contact_email, contact_phone, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'new') RETURNING id",
     )
-    .bind(&body.event_type).bind(event_date).bind(body.guest_count).bind(&body.venue).bind(body.budget_cents)
-    .bind(&body.menu_requirements).bind(&body.contact_name).bind(&body.contact_email).bind(&body.contact_phone)
-    .fetch_one(&mut *tx).await.map_err(|_| ApiError::Internal)?;
+    .bind(&body.event_type)
+    .bind(event_date)
+    .bind(body.guest_count)
+    .bind(&body.venue)
+    .bind(body.budget_cents)
+    .bind(&body.menu_requirements)
+    .bind(&body.contact_name)
+    .bind(&body.contact_email)
+    .bind(&body.contact_phone)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| ApiError::Internal)?;
+    let guests = body.guest_count.map(|g| g.to_string()).unwrap_or_else(|| "unspecified".into());
     let html = email_outbox::branded_template(
         "Catering enquiry received",
         &format!(
             "<p>Thanks {} — we received your {} enquiry for {} guests.</p>",
             email_outbox::escape_html(&body.contact_name),
             email_outbox::escape_html(&body.event_type),
-            body.guest_count
+            guests
         ),
     );
     email_outbox::enqueue(
@@ -87,8 +98,10 @@ async fn create_request(
         &format!(
             "<p>{} · {} guests · {}</p>",
             email_outbox::escape_html(&body.contact_name),
-            body.guest_count,
+            guests,
             event_date
+                .map(|d| d.to_string())
+                .unwrap_or_else(|| "unspecified".into())
         ),
     );
     email_outbox::enqueue(
