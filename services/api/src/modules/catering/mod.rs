@@ -56,7 +56,8 @@ async fn create_request(
         .event_date
         .as_deref()
         .map(|s| {
-            s.parse().map_err(|_| ApiError::Unprocessable("event_date must be YYYY-MM-DD".into()))
+            s.parse()
+                .map_err(|_| ApiError::Unprocessable("event_date must be YYYY-MM-DD".into()))
         })
         .transpose()?;
     let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
@@ -75,7 +76,10 @@ async fn create_request(
     .fetch_one(&mut *tx)
     .await
     .map_err(|_| ApiError::Internal)?;
-    let guests = body.guest_count.map(|g| g.to_string()).unwrap_or_else(|| "unspecified".into());
+    let guests = body
+        .guest_count
+        .map(|g| g.to_string())
+        .unwrap_or_else(|| "unspecified".into());
     let html = email_outbox::branded_template(
         "Catering enquiry received",
         &format!(
