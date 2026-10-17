@@ -3,6 +3,7 @@ pub mod auth;
 pub mod cart;
 pub mod categories;
 pub mod catering;
+pub mod coupons;
 pub mod inventory;
 pub mod notifications;
 pub mod orders;

@@ -36,6 +36,7 @@ pub fn router(state: SharedState) -> Router {
         .merge(crate::modules::users::router())
         .merge(crate::modules::categories::router())
         .merge(crate::modules::subscribers::router())
+        .merge(crate::modules::coupons::router())
         .merge(crate::modules::products::router())
         .merge(crate::modules::inventory::router())
         .merge(crate::modules::cart::router())

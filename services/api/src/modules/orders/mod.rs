@@ -37,6 +37,7 @@ struct CreateReq {
     contact_phone: Option<String>,
     delivery_address: Option<String>,
     notes: Option<String>,
+    coupon_code: Option<String>,
 }
 #[derive(Deserialize, Serialize)]
 struct Item {
@@ -69,6 +70,8 @@ async fn create(
     }
     let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
     let mut subtotal: i64 = 0;
+    let mut discount_cents: i64 = 0;
+    let mut coupon_id: Option<Uuid> = None;
     let mut lines: Vec<(Uuid, Option<Uuid>, String, i32, i64)> = vec![];
     for it in &body.items {
         if it.qty < 1 || it.qty > 99 {
@@ -112,6 +115,63 @@ async fn create(
         subtotal += unit * (it.qty as i64);
         lines.push((it.product_id, it.variant_id, name, it.qty, unit));
     }
+
+    // Coupon validation + discount: requires a verified subscriber email.
+    if let Some(ref code) = body.coupon_code {
+        let code_upper = code.trim().to_uppercase();
+        let rec: Option<(Uuid, i32, Option<chrono::DateTime<chrono::Utc>>, Option<i32>, i32, bool)> =
+            sqlx::query_as(
+                "SELECT id, discount_percentage, expires_at, max_usages, usage_count, active FROM coupons WHERE code=$1",
+            )
+            .bind(&code_upper)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|_| ApiError::Internal)?;
+        let Some((cid, discount_pct, expires_at, max_usages, usage_count, active)) = rec else {
+            return Err(ApiError::Unprocessable("unknown coupon code".into()));
+        };
+        if !active {
+            return Err(ApiError::Unprocessable("coupon is not active".into()));
+        }
+        if let Some(expires) = expires_at {
+            if expires < chrono::Utc::now() {
+                return Err(ApiError::Unprocessable("coupon expired".into()));
+            }
+        }
+        if let Some(max) = max_usages {
+            if usage_count >= max {
+                return Err(ApiError::Unprocessable("coupon usage limit reached".into()));
+            }
+        }
+        let sub: Option<String> = sqlx::query_scalar(
+            "SELECT status::text FROM subscribers WHERE email_normalized=$1 AND status='verified'",
+        )
+        .bind(&body.contact_email.trim().to_lowercase())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| ApiError::Internal)?;
+        if sub.is_none() {
+            return Err(ApiError::Unprocessable(
+                "coupon requires a verified subscription".into(),
+            ));
+        }
+        discount_cents = (subtotal as f64 * discount_pct as f64 / 100.0).round() as i64;
+        coupon_id = Some(cid);
+
+        sqlx::query("UPDATE coupons SET usage_count = usage_count + 1 WHERE id=$1")
+            .bind(cid)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| ApiError::Internal)?;
+        sqlx::query(
+            "INSERT INTO coupon_usages (coupon_id, email_normalized, used_at) VALUES ($1,$2,now())",
+        )
+        .bind(cid)
+        .bind(&body.contact_email.trim().to_lowercase())
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| ApiError::Internal)?;
+    }
     let delivery_fee: i64 = if body.fulfilment_method == "delivery" {
         let zid = body
             .delivery_zone_id
@@ -125,15 +185,27 @@ async fn create(
     } else {
         0
     };
-    let total = subtotal + delivery_fee;
+    let total = subtotal + delivery_fee - discount_cents;
     let reference = order_ref();
     let order_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO orders (reference, user_id, contact_name, contact_email, contact_phone, fulfilment_method, delivery_zone_id, delivery_address, notes, currency, subtotal_cents, delivery_fee_cents, total_cents, payment_status, fulfilment_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ZAR',$10,$11,$12,'pending','new') RETURNING id",
+        "INSERT INTO orders (reference, user_id, contact_name, contact_email, contact_phone, fulfilment_method, delivery_zone_id, delivery_address, notes, currency, subtotal_cents, discount_cents, delivery_fee_cents, total_cents, payment_status, fulfilment_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ZAR',$10,$11,$12,$13,'pending','new') RETURNING id",
     )
-    .bind(&reference).bind(me.map(|m| m.user_id)).bind(&body.contact_name).bind(&body.contact_email)
-    .bind(&body.contact_phone).bind(&body.fulfilment_method).bind(body.delivery_zone_id).bind(&body.delivery_address).bind(&body.notes)
-    .bind(subtotal).bind(delivery_fee).bind(total)
-    .fetch_one(&mut *tx).await.map_err(|_| ApiError::Internal)?;
+    .bind(&reference)
+    .bind(me.map(|m| m.user_id))
+    .bind(&body.contact_name)
+    .bind(&body.contact_email)
+    .bind(&body.contact_phone)
+    .bind(&body.fulfilment_method)
+    .bind(body.delivery_zone_id)
+    .bind(&body.delivery_address)
+    .bind(&body.notes)
+    .bind(subtotal)
+    .bind(discount_cents)
+    .bind(delivery_fee)
+    .bind(total)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| ApiError::Internal)?;
     for (pid, vid, name, qty, unit) in lines {
         sqlx::query("INSERT INTO order_items (order_id, product_id, variant_id, product_name, qty, unit_price_cents, line_total_cents) VALUES ($1,$2,$3,$4,$5,$6,$7)")
             .bind(order_id).bind(pid).bind(vid).bind(name).bind(qty).bind(unit).bind(unit * (qty as i64))
@@ -142,9 +214,14 @@ async fn create(
     let html = email_outbox::branded_template(
         "Order received",
         &format!(
-            "<p>Reference <b>{}</b> — total R{:.2}. Pay via checkout to confirm.</p>",
+            "<p>Reference <b>{}</b> — subtotal R{:.2}{discount}. Pay via checkout to confirm.</p>",
             reference,
-            total as f64 / 100.0
+            subtotal as f64 / 100.0,
+            discount = if discount_cents > 0 {
+                format!(" — discount -R{:.2}", discount_cents as f64 / 100.0)
+            } else {
+                String::new()
+            }
         ),
     );
     email_outbox::enqueue(
@@ -156,9 +233,15 @@ async fn create(
     .await
     .map_err(|_| ApiError::Internal)?;
     tx.commit().await.map_err(|_| ApiError::Internal)?;
-    let (st, Json(inner)) = ApiResponse::created(
-        serde_json::json!({"id": order_id, "reference": reference, "total_cents": total, "currency": "ZAR"}),
-    );
+    let (st, Json(inner)) = ApiResponse::created(serde_json::json!({
+        "id": order_id,
+        "reference": reference,
+        "subtotal_cents": subtotal,
+        "discount_cents": discount_cents,
+        "total_cents": total,
+        "currency": "ZAR",
+        "coupon_code": body.coupon_code.map(|c| c.trim().to_uppercase()),
+    }));
     Ok((st, Json(inner.data)))
 }
 
