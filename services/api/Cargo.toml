@@ -35,6 +35,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "request-id", "limi
 tower = { version = "0.5", features = ["util", "limit", "timeout"] }
 redis = { version = "0.27", features = ["tokio-rustls-comp"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "charset", "rustls-tls"] }
+openidconnect = "4"
 dotenvy = "0.15"
 anyhow = "1"
 thiserror = "2"
@@ -44,6 +45,6 @@ http-body-util = "0.1"
 async-trait = "0.1"
 
 [dev-dependencies]
-axum-test = "17"
+axum-test = "16"
 tokio-test = "0.4"
 wiremock = "0.6"

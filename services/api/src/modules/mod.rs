@@ -12,6 +12,5 @@ pub mod orders;
 pub mod payments;
 pub mod products;
 pub mod quotations;
-pub mod refunds;
 pub mod subscribers;
 pub mod users;
