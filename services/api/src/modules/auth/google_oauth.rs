@@ -226,7 +226,7 @@ async fn google_callback(
         })?;
 
     let provider_user_id = claims.subject().to_string();
-    let email = claims.get_email().map(|e| e.to_string());
+    let email = claims.email().map(|email| email.as_str().to_owned());
 
     let user_id = find_or_create_google_user(&s, &tx, &provider_user_id, email.as_deref()).await?;
 
