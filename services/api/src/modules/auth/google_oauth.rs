@@ -10,7 +10,7 @@ use chrono::Utc;
 use openidconnect::{
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     AuthorizationCode, CsrfToken, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, Nonce,
-    PkceCodeChallenge, RedirectUrl, Scope,
+    PkceCodeChallenge, RedirectUrl, Scope, TokenResponse,
 };
 use rand::RngCore;
 use serde::Deserialize;
@@ -117,11 +117,13 @@ async fn google_login(
         RedirectUrl::new(s.cfg.google_redirect_uri.clone()).map_err(|_| ApiError::Internal)?;
     let client = client.set_redirect_uri(redirect_url);
 
+    let oauth_state = state.clone();
+    let oauth_nonce = nonce.clone();
     let (auth_url, _csrf_token, _nonce) = client
         .authorize_url(
             CoreAuthenticationFlow::AuthorizationCode,
-            || CsrfToken::new(state.clone()),
-            || Nonce::new(nonce.clone()),
+            move || CsrfToken::new(oauth_state),
+            move || Nonce::new(oauth_nonce),
         )
         .add_scope(Scope::new("openid".to_string()))
         .add_scope(Scope::new("email".to_string()))
@@ -207,7 +209,7 @@ async fn google_callback(
         .set_pkce_verifier(openidconnect::PkceCodeVerifier::new(
             tx.code_verifier.clone(),
         ))
-        .request_async(reqwest::Client::new())
+        .request_async(&reqwest::Client::new())
         .await
         .map_err(|e| {
             tracing::warn!(error = %e, "google token exchange failed");
