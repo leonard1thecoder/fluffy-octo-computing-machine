@@ -173,8 +173,14 @@ impl Config {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
-            google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
-            google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
+            google_client_id: std::env::var("GOOGLE_CLIENT_ID")
+                .unwrap_or_default()
+                .trim()
+                .to_owned(),
+            google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET")
+                .unwrap_or_default()
+                .trim()
+                .to_owned(),
             google_redirect_uri: std::env::var("GOOGLE_REDIRECT_URI").unwrap_or_default(),
             google_issuer: std::env::var("GOOGLE_ISSUER")
                 .unwrap_or_else(|_| "https://accounts.google.com".into()),

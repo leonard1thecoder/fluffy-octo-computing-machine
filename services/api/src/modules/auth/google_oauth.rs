@@ -143,7 +143,10 @@ async fn build_google_client(
         Some(openidconnect::ClientSecret::new(
             cfg.google_client_secret.clone(),
         )),
-    ))
+    )
+    // Google advertises client_secret_post and client_secret_basic. Send the
+    // credentials as the token endpoint's documented form parameters.
+    .set_auth_type(openidconnect::AuthType::RequestBody))
 }
 
 fn random_token() -> String {
