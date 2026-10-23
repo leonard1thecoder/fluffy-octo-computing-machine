@@ -42,7 +42,7 @@ async fn setup_test_app(
     env::set_var("GOOGLE_CLIENT_SECRET", "test-client-secret");
     env::set_var(
         "GOOGLE_REDIRECT_URI",
-        &format!("{}/api/v1/auth/google/callback", mock_server.uri()),
+        format!("{}/api/v1/auth/google/callback", mock_server.uri()),
     );
     let issuer = google_issuer_override
         .map(str::to_owned)
