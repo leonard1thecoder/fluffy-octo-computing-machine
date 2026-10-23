@@ -73,7 +73,7 @@ async fn setup_test_app(
         .await
         .expect("app state should init");
     let app = router(state);
-    let server = TestServer::new(app).expect("test server should start");
+    let server = TestServer::new(app);
     (server, db_pool)
 }
 
