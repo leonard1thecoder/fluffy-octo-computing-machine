@@ -29,6 +29,12 @@ async fn process_batch(state: &SharedState) -> anyhow::Result<()> {
             Err(e) => {
                 let next_secs: i64 = 60 * 2_i64.pow(attempts.clamp(0, 6) as u32);
                 let jitter = (rand::random::<i64>() % 30).abs();
+                tracing::warn!(
+                    email_id = %id,
+                    attempt = attempts + 1,
+                    error = %e,
+                    "outbound email delivery failed; retry scheduled"
+                );
                 sqlx::query(
                     "UPDATE email_outbox SET attempts=attempts+1, next_attempt_at=now()+($2::bigint * interval '1 second'), last_error=$3, status=CASE WHEN attempts+1>=8 THEN 'failed'::email_status ELSE 'pending'::email_status END WHERE id=$1",
                 )
