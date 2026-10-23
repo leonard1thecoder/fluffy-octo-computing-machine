@@ -232,7 +232,7 @@ async fn google_callback(
 
     let access =
         crate::modules::auth::jwt::mint_access(user_id, &s.cfg).map_err(|_| ApiError::Internal)?;
-    let (refresh_raw, refresh_hash) = crate::modules::auth::jwt::new_refresh_token();
+    let (_refresh_raw, refresh_hash) = crate::modules::auth::jwt::new_refresh_token();
 
     sqlx::query(
         "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent, ip) VALUES ($1,$2,now()+($3::bigint * interval '1 second'),$4,$5)",

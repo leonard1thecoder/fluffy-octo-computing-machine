@@ -15,6 +15,17 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+type CouponValidationRow = (
+    Uuid,
+    i32,
+    Option<chrono::DateTime<chrono::Utc>>,
+    Option<i32>,
+    i32,
+    bool,
+    Option<String>,
+    Option<Uuid>,
+);
+
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/orders", post(create).get(mine_alias))
@@ -68,6 +79,7 @@ async fn create(
             "fulfilment_method must be pickup|delivery".into(),
         ));
     }
+    let normalized_contact_email = body.contact_email.trim().to_lowercase();
     let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
     let mut subtotal: i64 = 0;
     let mut discount_cents: i64 = 0;
@@ -118,16 +130,7 @@ async fn create(
     // Coupon validation + discount: requires a verified subscriber email.
     if let Some(ref code) = body.coupon_code {
         let code_upper = code.trim().to_uppercase();
-        let rec: Option<(
-            Uuid,
-            i32,
-            Option<chrono::DateTime<chrono::Utc>>,
-            Option<i32>,
-            i32,
-            bool,
-            Option<String>,
-            Option<uuid::Uuid>,
-        )> = sqlx::query_as(
+        let rec: Option<CouponValidationRow> = sqlx::query_as(
             "SELECT id, discount_percentage, expires_at, max_usages, usage_count, active, subscriber_email, product_id FROM coupons WHERE code=$1 FOR UPDATE",
         )
         .bind(&code_upper)
@@ -163,7 +166,7 @@ async fn create(
         let sub: Option<String> = sqlx::query_scalar(
             "SELECT status::text FROM subscribers WHERE email_normalized=$1 AND status='verified'",
         )
-        .bind(&body.contact_email.trim().to_lowercase())
+        .bind(normalized_contact_email.clone())
         .fetch_optional(&mut *tx)
         .await
         .map_err(|_| ApiError::Internal)?;
@@ -175,8 +178,7 @@ async fn create(
 
         // Individual-subscriber coupon: only the nominated email may claim it.
         if let Some(ref sub_email) = coupon_subscriber_email {
-            let order_email = body.contact_email.trim().to_lowercase();
-            if order_email != *sub_email {
+            if normalized_contact_email != *sub_email {
                 return Err(ApiError::Unprocessable(
                     "coupon is not valid for this email".into(),
                 ));
@@ -198,7 +200,7 @@ async fn create(
         let already_used: Option<Uuid> = sqlx::query_scalar(
             "SELECT coupon_id FROM coupon_usages WHERE email_normalized=$1 LIMIT 1",
         )
-        .bind(&body.contact_email.trim().to_lowercase())
+        .bind(normalized_contact_email.clone())
         .fetch_optional(&mut *tx)
         .await
         .map_err(|_| ApiError::Internal)?;
@@ -228,7 +230,7 @@ async fn create(
             "INSERT INTO coupon_usages (coupon_id, email_normalized, used_at) VALUES ($1,$2,now())",
         )
         .bind(cid)
-        .bind(&body.contact_email.trim().to_lowercase())
+        .bind(normalized_contact_email)
         .execute(&mut *tx)
         .await
         .map_err(|_| ApiError::Internal)?;

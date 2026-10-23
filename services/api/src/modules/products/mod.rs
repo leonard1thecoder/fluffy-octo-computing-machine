@@ -13,6 +13,17 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+type ProductListRow = (
+    uuid::Uuid,
+    String,
+    String,
+    i64,
+    String,
+    bool,
+    String,
+    Option<String>,
+);
+
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/products", get(list).post(create))
@@ -49,16 +60,7 @@ async fn list(
     let page = q.page.unwrap_or(1).max(1);
     let per = q.per_page.unwrap_or(20).clamp(1, 100);
     let off = (page - 1) * per;
-    let rows: Vec<(
-        uuid::Uuid,
-        String,
-        String,
-        i64,
-        String,
-        bool,
-        String,
-        Option<String>,
-    )> = sqlx::query_as(
+    let rows: Vec<ProductListRow> = sqlx::query_as(
         "SELECT id, name, slug, price_cents, currency, active, description, image_url FROM products WHERE active=true AND ($1 IS NULL OR name ILIKE '%'||$1||'%') ORDER BY name LIMIT $2 OFFSET $3",
     )
     .bind(q.search.clone()).bind(per).bind(off).fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;

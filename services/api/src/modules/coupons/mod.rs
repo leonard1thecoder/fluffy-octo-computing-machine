@@ -12,6 +12,18 @@ use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
 
+type CouponListRow = (Uuid, String, i32, Option<String>, Option<i32>, i32, bool);
+type CouponValidationRow = (
+    Uuid,
+    i32,
+    Option<chrono::DateTime<chrono::Utc>>,
+    Option<i32>,
+    i32,
+    bool,
+    Option<String>,
+    Option<Uuid>,
+);
+
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/admin/coupons", get(list).post(create))
@@ -60,7 +72,7 @@ async fn list(
     if u.role != "admin" {
         return Err(ApiError::Forbidden);
     }
-    let rows: Vec<(Uuid, String, i32, Option<String>, Option<i32>, i32, bool)> = sqlx::query_as(
+    let rows: Vec<CouponListRow> = sqlx::query_as(
         "SELECT id, code, discount_percentage, expires_at, max_usages, usage_count, active FROM coupons ORDER BY created_at DESC LIMIT 100",
     )
     .fetch_all(&s.db)
@@ -257,16 +269,7 @@ async fn validate_coupon(
     let code = q.code.trim().to_uppercase();
     let email_normalized = q.email.as_deref().map(normalize_email);
 
-    let rec: Option<(
-        Uuid,
-        i32,
-        Option<chrono::DateTime<chrono::Utc>>,
-        Option<i32>,
-        i32,
-        bool,
-        Option<String>,
-        Option<uuid::Uuid>,
-    )> = sqlx::query_as(
+    let rec: Option<CouponValidationRow> = sqlx::query_as(
         "SELECT id, discount_percentage, expires_at, max_usages, usage_count, active, subscriber_email, product_id FROM coupons WHERE code=$1",
     )
     .bind(&code)
