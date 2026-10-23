@@ -46,18 +46,6 @@ struct Item {
     qty: i32,
 }
 
-/// Row shape for the coupon lookup during order creation (with scope restrictions).
-type OrderCouponRow = (
-    Uuid,
-    i32,
-    Option<chrono::DateTime<chrono::Utc>>,
-    Option<i32>,
-    i32,
-    bool,
-    Option<String>,
-    Option<uuid::Uuid>,
-);
-
 fn order_ref() -> String {
     format!(
         "NHL-{}-{}",
@@ -130,7 +118,16 @@ async fn create(
     // Coupon validation + discount: requires a verified subscriber email.
     if let Some(ref code) = body.coupon_code {
         let code_upper = code.trim().to_uppercase();
-        let rec: Option<OrderCouponRow> = sqlx::query_as(
+        let rec: Option<(
+            Uuid,
+            i32,
+            Option<chrono::DateTime<chrono::Utc>>,
+            Option<i32>,
+            i32,
+            bool,
+            Option<String>,
+            Option<uuid::Uuid>,
+        )> = sqlx::query_as(
             "SELECT id, discount_percentage, expires_at, max_usages, usage_count, active, subscriber_email, product_id FROM coupons WHERE code=$1 FOR UPDATE",
         )
         .bind(&code_upper)
@@ -166,7 +163,7 @@ async fn create(
         let sub: Option<String> = sqlx::query_scalar(
             "SELECT status::text FROM subscribers WHERE email_normalized=$1 AND status='verified'",
         )
-        .bind(body.contact_email.trim().to_lowercase())
+        .bind(&body.contact_email.trim().to_lowercase())
         .fetch_optional(&mut *tx)
         .await
         .map_err(|_| ApiError::Internal)?;
@@ -201,7 +198,7 @@ async fn create(
         let already_used: Option<Uuid> = sqlx::query_scalar(
             "SELECT coupon_id FROM coupon_usages WHERE email_normalized=$1 LIMIT 1",
         )
-        .bind(body.contact_email.trim().to_lowercase())
+        .bind(&body.contact_email.trim().to_lowercase())
         .fetch_optional(&mut *tx)
         .await
         .map_err(|_| ApiError::Internal)?;
@@ -231,7 +228,7 @@ async fn create(
             "INSERT INTO coupon_usages (coupon_id, email_normalized, used_at) VALUES ($1,$2,now())",
         )
         .bind(cid)
-        .bind(body.contact_email.trim().to_lowercase())
+        .bind(&body.contact_email.trim().to_lowercase())
         .execute(&mut *tx)
         .await
         .map_err(|_| ApiError::Internal)?;
@@ -372,7 +369,7 @@ async fn cancel(
             "paid orders cannot be cancelled online".into(),
         ));
     }
-    sqlx::query("UPDATE orders SET fulfilment_status='cancelled'::fulfilment_status WHERE id=$1")
+    sqlx::query("UPDATE orders SET fulfilment_status='cancelled' WHERE id=$1")
         .bind(id)
         .execute(&s.db)
         .await

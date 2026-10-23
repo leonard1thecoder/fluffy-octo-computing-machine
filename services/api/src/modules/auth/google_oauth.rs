@@ -1,9 +1,4 @@
-use crate::{
-    config::Config,
-    errors::ApiError,
-    modules::auth::jwt,
-    state::SharedState,
-};
+use crate::{config::Config, errors::ApiError, modules::auth::jwt, state::SharedState};
 use axum::{
     extract::{Query, State},
     http::header::HeaderMap,
@@ -23,7 +18,10 @@ pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/auth/google", get(google_login))
         .route("/api/v1/auth/google/callback", get(google_callback))
-        .route("/api/v1/auth/google/exchange", post(google_callback_exchange))
+        .route(
+            "/api/v1/auth/google/exchange",
+            post(google_callback_exchange),
+        )
 }
 
 /// A pending OAuth transaction stored in the DB (single use, short TTL).
@@ -80,17 +78,13 @@ struct GoogleClaims {
 
 /// Discover Google's OIDC endpoints from the issuer's well-known document.
 async fn discover(http: &reqwest::Client, cfg: &Config) -> Result<ProviderMetadata, ApiError> {
-    let issuer = IssuerUrl::new(cfg.google_issuer.clone())
-        .map_err(|_| ApiError::Internal)?;
-    let provider_meta = CoreProviderMetadata::discover_async(
-        issuer,
-        &reqwest::Client::new(),
-    )
-    .await
-    .map_err(|e| {
-        tracing::warn!(error = %e, "google oidc discovery failed");
-        ApiError::Internal
-    })?;
+    let issuer = IssuerUrl::new(cfg.google_issuer.clone()).map_err(|_| ApiError::Internal)?;
+    let provider_meta = CoreProviderMetadata::discover_async(issuer, &reqwest::Client::new())
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "google oidc discovery failed");
+            ApiError::Internal
+        })?;
     Ok(provider_meta)
 }
 
@@ -280,7 +274,10 @@ async fn google_callback(
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(error = %e, "google token exchange request failed");
-            return Ok(redirect_frontend_error(cfg, "token_exchange_request_failed"));
+            return Ok(redirect_frontend_error(
+                cfg,
+                "token_exchange_request_failed",
+            ));
         }
     };
 
@@ -364,8 +361,7 @@ async fn google_callback(
             }
             link_user_id
         }
-        None => match find_or_create_google_user(&s, &provider_user_id, email.as_deref()).await
-        {
+        None => match find_or_create_google_user(&s, &provider_user_id, email.as_deref()).await {
             Ok(u) => u,
             Err(e) => {
                 tracing::warn!(error = %e, "database error finding or creating user");
@@ -396,8 +392,7 @@ async fn google_callback(
         ),
         None => format!(
             "{}/auth/google/callback?code={}",
-            s.cfg.public_web_url,
-            exchange_code
+            s.cfg.public_web_url, exchange_code
         ),
     };
     Ok(Redirect::to(&success_url))
@@ -520,9 +515,11 @@ async fn verify_id_token(
         }
     };
 
-    let jwk = match jwks.keys.iter().find(|k| {
-        k.kty == "RSA" && header.kid.as_deref() == k.kid.as_deref()
-    }) {
+    let jwk = match jwks
+        .keys
+        .iter()
+        .find(|k| k.kty == "RSA" && header.kid.as_deref() == k.kid.as_deref())
+    {
         Some(j) => j,
         None => return Err(ApiError::Unauthorized),
     };

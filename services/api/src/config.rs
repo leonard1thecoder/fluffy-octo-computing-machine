@@ -40,8 +40,6 @@ pub struct Config {
     pub google_client_secret: String,
     pub google_redirect_uri: String,
     pub google_issuer: String,
-    /// Percentage deducted from a refund as the bank charge (default 8).
-    pub refund_bank_charge_pct: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -180,10 +178,6 @@ impl Config {
             google_redirect_uri: std::env::var("GOOGLE_REDIRECT_URI").unwrap_or_default(),
             google_issuer: std::env::var("GOOGLE_ISSUER")
                 .unwrap_or_else(|_| "https://accounts.google.com".into()),
-            refund_bank_charge_pct: std::env::var("REFUND_BANK_CHARGE_PCT")
-                .ok()
-                .and_then(|v| v.trim().parse().ok())
-                .unwrap_or(8),
         })
     }
 }

@@ -1,5 +1,3 @@
-pub mod refund;
-
 use subtle::ConstantTimeEq;
 
 /// PayFast signature (official docs, developers.payfast.co.za):

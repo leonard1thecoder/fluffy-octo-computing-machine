@@ -3,9 +3,13 @@ name = "nhlanganiso-api"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "nhlanganiso_api"
+path = "src/lib.rs"
+
 [[bin]]
 name = "nhlanganiso-api"
-path = "src/app.rs"
+path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.8", features = ["json", "form", "query", "matched-path"] }

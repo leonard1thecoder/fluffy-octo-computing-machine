@@ -1,15 +1,51 @@
+use std::sync::Arc;
+
+use anyhow::Context;
+
 use crate::config::Config;
 use crate::integrations::brevo::BrevoClient;
 use sqlx::PgPool;
-use redis::Client;
 
 #[derive(Clone)]
 pub struct AppState {
     pub cfg: Config,
     pub db: PgPool,
-    pub redis: Client,
+    pub redis: Option<redis::Client>,
+    pub http: reqwest::Client,
     pub brevo: BrevoClient,
 }
 
-/// Backwards-compatible name used by the route modules.
-pub type SharedState = AppState;
+impl AppState {
+    pub async fn new(cfg: Config, db: PgPool) -> anyhow::Result<Arc<Self>> {
+        let redis = match cfg.redis_url.clone() {
+            Some(url) => Some(redis::Client::open(url).with_context(|| {
+                "REDIS_URL did not parse; expected a Redis TCP URL like \
+                 rediss://default:PASSWORD@host:6379 (Upstash: use the Redis endpoint, \
+                 not the https:// REST endpoint)"
+            })?),
+            None => {
+                tracing::warn!("REDIS_URL unset; starting WITHOUT rate limiting");
+                None
+            }
+        };
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .user_agent("nhlanganiso-api/0.1")
+            .build()?;
+        let brevo = BrevoClient::new(
+            http.clone(),
+            cfg.brevo_api_key.clone(),
+            cfg.brevo_sender_email.clone(),
+            cfg.brevo_sender_name.clone(),
+        );
+        Ok(Arc::new(Self {
+            cfg,
+            db,
+            redis,
+            http,
+            brevo,
+        }))
+    }
+}
+
+pub type SharedState = Arc<AppState>;

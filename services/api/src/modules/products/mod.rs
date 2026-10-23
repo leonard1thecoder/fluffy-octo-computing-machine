@@ -42,18 +42,6 @@ struct ListQ {
     sort: Option<String>,
 }
 
-/// Row shape for the product listing.
-type ProductRow = (
-    uuid::Uuid,
-    String,
-    String,
-    i64,
-    String,
-    bool,
-    String,
-    Option<String>,
-);
-
 async fn list(
     State(s): State<SharedState>,
     Query(q): Query<ListQ>,
@@ -61,7 +49,16 @@ async fn list(
     let page = q.page.unwrap_or(1).max(1);
     let per = q.per_page.unwrap_or(20).clamp(1, 100);
     let off = (page - 1) * per;
-    let rows: Vec<ProductRow> = sqlx::query_as(
+    let rows: Vec<(
+        uuid::Uuid,
+        String,
+        String,
+        i64,
+        String,
+        bool,
+        String,
+        Option<String>,
+    )> = sqlx::query_as(
         "SELECT id, name, slug, price_cents, currency, active, description, image_url FROM products WHERE active=true AND ($1 IS NULL OR name ILIKE '%'||$1||'%') ORDER BY name LIMIT $2 OFFSET $3",
     )
     .bind(q.search.clone()).bind(per).bind(off).fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;

@@ -211,13 +211,11 @@ async fn itn(
     }
     // 8. Only COMPLETE settles; others record without fulfilment side-effects.
     if pay_status != "COMPLETE" {
-        sqlx::query(
-            "UPDATE payments SET status='failed'::payment_status WHERE id=$1 AND status='pending'",
-        )
-        .bind(payment_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| ApiError::Internal)?;
+        sqlx::query("UPDATE payments SET status='failed' WHERE id=$1 AND status='pending'")
+            .bind(payment_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| ApiError::Internal)?;
         sqlx::query("INSERT INTO payment_events (payment_id, merchant_payment_id, provider_txn_id, payload, result) VALUES ($1,$2,$3,$4,'non-complete')")
             .bind(payment_id).bind(&m_payment_id).bind(&pf_txn_id).bind(serde_json::json!({"status": pay_status}))
             .execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
@@ -238,13 +236,13 @@ async fn itn(
         tx.commit().await.map_err(|_| ApiError::Internal)?;
         return Ok((StatusCode::OK, "OK".into()));
     }
-    sqlx::query("UPDATE payments SET status='paid'::payment_status, provider_txn_id=$2, paid_at=now() WHERE id=$1")
+    sqlx::query("UPDATE payments SET status='paid', provider_txn_id=$2, paid_at=now() WHERE id=$1")
         .bind(payment_id)
         .bind(&pf_txn_id)
         .execute(&mut *tx)
         .await
         .map_err(|_| ApiError::Internal)?;
-    sqlx::query("UPDATE orders SET payment_status='paid'::payment_status WHERE id=$1 AND payment_status<>'paid'")
+    sqlx::query("UPDATE orders SET payment_status='paid' WHERE id=$1 AND payment_status<>'paid'")
         .bind(order_id)
         .execute(&mut *tx)
         .await

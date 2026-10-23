@@ -15,38 +15,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-/// Row shape for the admin contact-requests listing.
-type AdminRequestRow = (
-    Uuid,
-    String,
-    String,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-);
-
-/// Statuses the API accepts for a catering/contact enquiry.
-/// `replied` and `closed` are used by the back office for contact requests.
-const CATERING_STATUSES: [&str; 7] = [
-    "new",
-    "reviewing",
-    "quoted",
-    "replied",
-    "closed",
-    "accepted",
-    "declined",
-];
-
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/catering/requests", post(create_request))
         .route("/api/v1/catering/requests/{id}", get(get_request))
         .route("/api/v1/admin/catering/requests", get(admin_list))
         .route("/api/v1/admin/catering/requests/{id}", patch(admin_update))
-        .route(
-            "/api/v1/admin/catering/requests/{id}/reply",
-            post(admin_reply),
-        )
         .route(
             "/api/v1/admin/catering/requests/{id}/quotes",
             post(create_quote),
@@ -146,20 +120,11 @@ async fn admin_list(
     if u.role != "admin" {
         return Err(ApiError::Forbidden);
     }
-    let rows: Vec<AdminRequestRow> = sqlx::query_as("SELECT id, event_type, status::text, contact_name, contact_email, menu_requirements FROM catering_requests ORDER BY created_at DESC LIMIT 100")
+    let rows: Vec<(Uuid, String, String)> = sqlx::query_as("SELECT id, event_type, status::text FROM catering_requests ORDER BY created_at DESC LIMIT 100")
         .fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
     let items: Vec<_> = rows
         .into_iter()
-        .map(|(id, t, st, name, email, message)| {
-            serde_json::json!({
-                "id": id,
-                "event_type": t,
-                "status": st,
-                "contact_name": name,
-                "contact_email": email,
-                "message": message,
-            })
-        })
+        .map(|(id, t, st)| serde_json::json!({"id": id, "event_type": t, "status": st}))
         .collect();
     let (st, Json(inner)) = ApiResponse::ok(items);
     Ok((st, Json(serde_json::to_value(inner.data).unwrap())))
@@ -181,7 +146,7 @@ async fn admin_update(
         return Err(ApiError::Forbidden);
     }
     if let Some(st) = body.status {
-        if !CATERING_STATUSES.contains(&st.as_str()) {
+        if !["new", "reviewing", "quoted", "accepted", "declined"].contains(&st.as_str()) {
             return Err(ApiError::Unprocessable("bad status".into()));
         }
         sqlx::query("UPDATE catering_requests SET status=$2::catering_status WHERE id=$1")
@@ -193,79 +158,6 @@ async fn admin_update(
         sqlx::query("INSERT INTO audit_logs (actor_user_id, action, entity, entity_id) VALUES ($1,'catering.update','catering_request',$2)")
             .bind(u.user_id).bind(id.to_string()).execute(&s.db).await.map_err(|_| ApiError::Internal)?;
     }
-    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
-    Ok((st, Json(inner.data)))
-}
-
-#[derive(Deserialize, Validate)]
-struct ReplyReq {
-    #[validate(length(min = 1, max = 5000))]
-    message: String,
-}
-
-/// Send a reply from the back office to the customer who made the enquiry.
-/// The reply is queued in the durable email outbox and the request is marked
-/// as replied (unless it already reached a final state).
-async fn admin_reply(
-    State(s): State<SharedState>,
-    headers: axum::http::HeaderMap,
-    Path(id): Path<Uuid>,
-    Json(body): Json<ReplyReq>,
-) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
-    let u = user_from_headers(&s, &headers).await?;
-    if u.role != "admin" {
-        return Err(ApiError::Forbidden);
-    }
-    body.validate().map_err(|e| ApiError::Validation {
-        fields: serde_json::json!(e.to_string()),
-    })?;
-
-    let rec: Option<(String, String)> =
-        sqlx::query_as("SELECT contact_email, event_type FROM catering_requests WHERE id=$1")
-            .bind(id)
-            .fetch_optional(&s.db)
-            .await
-            .map_err(|_| ApiError::Internal)?;
-    let Some((contact_email, event_type)) = rec else {
-        return Err(ApiError::NotFound);
-    };
-
-    let mut tx = s.db.begin().await.map_err(|_| ApiError::Internal)?;
-    let html = email_outbox::branded_template(
-        "Re: your Nhlanganiso enquiry",
-        &format!(
-            "<p>Hi,</p><div>{}</div><p>— Nhlanganiso Catering &amp; Baking</p>",
-            email_outbox::escape_html(body.message.trim())
-        ),
-    );
-    email_outbox::enqueue(
-        &mut tx,
-        &contact_email,
-        &format!("Re: {event_type} — Nhlanganiso"),
-        &html,
-    )
-    .await
-    .map_err(|_| ApiError::Internal)?;
-
-    sqlx::query(
-        "UPDATE catering_requests SET status='replied'::catering_status WHERE id=$1 AND status NOT IN ('accepted','declined','closed')",
-    )
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|_| ApiError::Internal)?;
-
-    sqlx::query(
-        "INSERT INTO audit_logs (actor_user_id, action, entity, entity_id) VALUES ($1,'catering.reply','catering_request',$2)",
-    )
-    .bind(u.user_id)
-    .bind(id.to_string())
-    .execute(&mut *tx)
-    .await
-    .map_err(|_| ApiError::Internal)?;
-
-    tx.commit().await.map_err(|_| ApiError::Internal)?;
-
     let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
     Ok((st, Json(inner.data)))
 }
@@ -315,7 +207,7 @@ async fn create_quote(
             .bind(qid).bind(&i.description).bind(i.qty).bind(i.unit_price_cents).bind(i.qty as i64 * i.unit_price_cents)
             .execute(&mut *tx).await.map_err(|_| ApiError::Internal)?;
     }
-    sqlx::query("UPDATE catering_requests SET status='quoted'::catering_status WHERE id=$1")
+    sqlx::query("UPDATE catering_requests SET status='quoted' WHERE id=$1")
         .bind(req_id)
         .execute(&mut *tx)
         .await
@@ -364,7 +256,7 @@ async fn accept_quote(
         return Err(ApiError::Unprocessable("quote not open".into()));
     }
     if valid_until < chrono::Utc::now().date_naive() {
-        sqlx::query("UPDATE catering_quotes SET status='expired'::quote_status WHERE id=$1")
+        sqlx::query("UPDATE catering_quotes SET status='expired' WHERE id=$1")
             .bind(qid)
             .execute(&mut *tx)
             .await
@@ -372,12 +264,12 @@ async fn accept_quote(
         tx.commit().await.map_err(|_| ApiError::Internal)?;
         return Err(ApiError::Unprocessable("quote expired".into()));
     }
-    sqlx::query("UPDATE catering_quotes SET status='accepted'::quote_status WHERE id=$1")
+    sqlx::query("UPDATE catering_quotes SET status='accepted' WHERE id=$1")
         .bind(qid)
         .execute(&mut *tx)
         .await
         .map_err(|_| ApiError::Internal)?;
-    sqlx::query("UPDATE catering_requests SET status='accepted'::catering_status WHERE id=$1")
+    sqlx::query("UPDATE catering_requests SET status='accepted' WHERE id=$1")
         .bind(req_id)
         .execute(&mut *tx)
         .await

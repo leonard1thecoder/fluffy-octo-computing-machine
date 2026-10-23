@@ -3,8 +3,8 @@ use crate::{
     response::ApiResponse, state::SharedState, workers::email_outbox,
 };
 use axum::{
-    extract::{Path, Query, State},
-    http::{header::HeaderMap, StatusCode},
+    extract::{HeaderMap, Path, Query, State},
+    http::StatusCode,
     routing::{get, patch},
     Json, Router,
 };
@@ -125,16 +125,6 @@ async fn create(
     Ok((st, Json(serde_json::json!(inner.data))))
 }
 
-/// Row shape for the admin newsletter listing.
-type AnnouncementRow = (
-    Uuid,
-    String,
-    String,
-    Option<String>,
-    Option<chrono::DateTime<chrono::Utc>>,
-    chrono::DateTime<chrono::Utc>,
-);
-
 async fn admin_list(
     State(s): State<SharedState>,
     headers: HeaderMap,
@@ -143,22 +133,21 @@ async fn admin_list(
     if u.role != "admin" {
         return Err(ApiError::Forbidden);
     }
-    let rows: Vec<AnnouncementRow> = sqlx::query_as(
-        "SELECT id, title, status::text, audience, sent_at, created_at FROM announcements ORDER BY created_at DESC LIMIT 100",
+    let rows: Vec<(Uuid, String, String, Option<String>, bool)> = sqlx::query_as(
+        "SELECT id, title, status::text, audience, created_at > now() - interval '7 days' FROM announcements ORDER BY created_at DESC LIMIT 100",
     )
     .fetch_all(&s.db)
     .await
     .map_err(|_| ApiError::Internal)?;
     let items: Vec<_> = rows
         .into_iter()
-        .map(|(id, title, status, audience, sent_at, created_at)| {
+        .map(|(id, title, status, audience, recent)| {
             serde_json::json!({
                 "id": id,
                 "title": title,
                 "status": status,
                 "audience": audience,
-                "sent_at": sent_at,
-                "created_at": created_at,
+                "recent": recent,
             })
         })
         .collect();

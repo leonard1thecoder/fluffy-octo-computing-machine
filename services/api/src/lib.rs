@@ -1,11 +1,12 @@
+#![allow(dead_code)]
 pub mod app;
 pub mod config;
-pub mod integrations {
-    pub mod brevo;
-    pub mod payfast;
-}
+pub mod db;
+pub mod errors;
+pub mod integrations;
+pub mod middleware;
 pub mod modules;
+pub mod response;
 pub mod state;
-pub mod workers {
-    pub mod email_outbox;
-}
+pub mod telemetry;
+pub mod workers;

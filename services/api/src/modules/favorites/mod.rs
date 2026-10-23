@@ -3,7 +3,7 @@ use crate::{
     response::ApiResponse, state::SharedState,
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header::HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
