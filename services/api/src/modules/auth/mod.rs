@@ -423,6 +423,8 @@ async fn request_password_reset(
     body.validate().map_err(|e| ApiError::Validation {
         fields: serde_json::json!(e.to_string()),
     })?;
+    let request_id = crate::middleware::request_id::current_request_id();
+    tracing::info!(request_id = %request_id, "password reset request received");
     let email = normalize_email(&body.email);
     // Generic response to avoid enumeration; only create token if user exists.
     let uid: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE email_normalized=$1")
@@ -451,10 +453,22 @@ async fn request_password_reset(
                 link
             ),
         );
-        email_outbox::enqueue(&mut tx, &email, "Reset your Nhlanganiso password", &html)
-            .await
-            .map_err(|_| ApiError::Internal)?;
+        let email_id =
+            email_outbox::enqueue(&mut tx, &email, "Reset your Nhlanganiso password", &html)
+                .await
+                .map_err(|_| ApiError::Internal)?;
         tx.commit().await.map_err(|_| ApiError::Internal)?;
+        tracing::info!(
+            request_id = %request_id,
+            email_id = %email_id,
+            "password reset email queued"
+        );
+    } else {
+        tracing::info!(
+            request_id = %request_id,
+            outcome = "no_matching_account",
+            "password reset request completed"
+        );
     }
     let (st, Json(inner)) = ApiResponse::ok(serde_json::json!({"ok": true}));
     Ok((st, Json(inner.data)))

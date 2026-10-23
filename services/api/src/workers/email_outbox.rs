@@ -9,7 +9,7 @@ pub async fn run(state: SharedState) {
         interval.tick().await;
         let _ = process_batch(&state)
             .await
-            .map_err(|e| tracing::warn!(error=%e, "outbox batch failed"));
+            .map_err(|e| tracing::warn!(error = %format!("{e:#}"), "outbox batch failed"));
     }
 }
 
@@ -20,26 +20,34 @@ async fn process_batch(state: &SharedState) -> anyhow::Result<()> {
     .fetch_all(&state.db)
     .await?;
     for (id, to, subject, html, attempts) in rows {
+        tracing::info!(
+            email_id = %id,
+            attempt = attempts + 1,
+            "outbound email delivery started"
+        );
         let res = state.brevo.send(&to, &subject, &html).await;
         match res {
             Ok(provider_id) => {
                 sqlx::query("UPDATE email_outbox SET status='sent', provider_message_id=$2, sent_at=now() WHERE id=$1")
                     .bind(id).bind(provider_id).execute(&state.db).await?;
+                tracing::info!(email_id = %id, "outbound email delivery succeeded");
             }
             Err(e) => {
                 let next_secs: i64 = 60 * 2_i64.pow(attempts.clamp(0, 6) as u32);
                 let jitter = (rand::random::<i64>() % 30).abs();
-                tracing::warn!(
-                    email_id = %id,
-                    attempt = attempts + 1,
-                    error = %format!("{e:#}"),
-                    "outbound email delivery failed; retry scheduled"
-                );
+                let retry_scheduled = attempts + 1 < 8;
                 sqlx::query(
                     "UPDATE email_outbox SET attempts=attempts+1, next_attempt_at=now()+($2::bigint * interval '1 second'), last_error=$3, status=CASE WHEN attempts+1>=8 THEN 'failed'::email_status ELSE 'pending'::email_status END WHERE id=$1",
                 )
                 .bind(id).bind(next_secs + jitter).bind(format!("{e:.200}"))
                 .execute(&state.db).await?;
+                tracing::warn!(
+                    email_id = %id,
+                    attempt = attempts + 1,
+                    retry_scheduled,
+                    error = %format!("{e:#}"),
+                    "outbound email delivery failed"
+                );
             }
         }
     }
@@ -52,14 +60,16 @@ pub async fn enqueue(
     recipient: &str,
     subject: &str,
     body_html: &str,
-) -> anyhow::Result<()> {
-    sqlx::query("INSERT INTO email_outbox (recipient, subject, body_html) VALUES ($1,$2,$3)")
-        .bind(recipient)
-        .bind(subject)
-        .bind(body_html)
-        .execute(&mut **tx)
-        .await?;
-    Ok(())
+) -> anyhow::Result<uuid::Uuid> {
+    let id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "INSERT INTO email_outbox (recipient, subject, body_html) VALUES ($1,$2,$3) RETURNING id",
+    )
+    .bind(recipient)
+    .bind(subject)
+    .bind(body_html)
+    .fetch_one(&mut **tx)
+    .await?;
+    Ok(id)
 }
 
 pub fn escape_html(s: &str) -> String {
