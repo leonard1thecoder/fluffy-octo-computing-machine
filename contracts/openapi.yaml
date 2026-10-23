@@ -1,0 +1,166 @@
+openapi: 3.0.3
+info:
+  title: Nhlanganiso Catering & Baking API
+  version: 1.0.0
+  description: Versioned REST API under /api/v1. Currency ZAR (cents internally).
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/health/live:
+    get:
+      security: []
+      responses: { '200': { description: OK } }
+  /api/v1/health/ready:
+    get:
+      security: []
+      responses: { '200': { description: Ready }, '503': { description: Unavailable } }
+  /api/v1/auth/register:
+    post:
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RegisterReq' } } } }
+      responses: { '201': { description: Created }, '409': { description: Conflict } }
+  /api/v1/auth/login:
+    post:
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LoginReq' } } } }
+      responses: { '200': { description: Token pair }, '401': { description: Unauthorized }, '429': { description: Rate limited } }
+  /api/v1/auth/refresh:
+    post:
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { refresh_token: { type: string } } } } } }
+      responses: { '200': { description: Rotated pair }, '401': { description: Invalid/reused } }
+  /api/v1/auth/logout:
+    post:
+      responses: { '200': { description: OK } }
+  /api/v1/auth/logout-all:
+    post:
+      responses: { '200': { description: OK } }
+  /api/v1/auth/me:
+    get:
+      responses: { '200': { description: Profile } }
+  /api/v1/auth/google:
+    get:
+      security: []
+      description: Starts the Google OAuth 2.0 / OIDC flow. Redirects the browser to Google.
+      responses: { '303': { description: Redirect to Google } }
+  /api/v1/auth/google/callback:
+    get:
+      security: []
+      description: Google redirect target. Validates state/nonce/PKCE and the ID token, then redirects to the frontend with a single-use exchange code.
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses: { '303': { description: Redirect to the frontend callback } }
+  /api/v1/auth/google/exchange:
+    post:
+      security: []
+      description: Exchanges a single-use OAuth code for the access/refresh token pair.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { code: { type: string } }, required: [code] } } } }
+      responses:
+        '200': { description: Token pair }
+        '401': { description: Unknown, expired or already used code }
+  /api/v1/admin/catering/requests/{id}/reply:
+    post:
+      description: Sends a reply from the back office to the customer.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { message: { type: string } }, required: [message] } } } }
+      responses: { '200': { description: Reply queued }, '403': { description: Admin only } }
+  /api/v1/auth/sessions:
+    get:
+      responses: { '200': { description: Sessions } }
+  /api/v1/auth/sessions/{id}:
+    delete:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Revoked } }
+  /api/v1/auth/verify-email:
+    get:
+      security: []
+      parameters: [{ name: token, in: query, required: true, schema: { type: string } }]
+      responses: { '200': { description: Verified } }
+  /api/v1/auth/password-reset/request:
+    post:
+      security: []
+      responses: { '200': { description: Generic OK } }
+  /api/v1/auth/password-reset/confirm:
+    post:
+      security: []
+      responses: { '200': { description: Reset } }
+  /api/v1/categories:
+    get:
+      security: []
+      responses: { '200': { description: List } }
+    post:
+      responses: { '201': { description: Created }, '403': { description: Admin only } }
+  /api/v1/products:
+    get:
+      security: []
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer } }
+      responses: { '200': { description: Paged } }
+    post:
+      responses: { '201': { description: Created } }
+  /api/v1/products/{slug}:
+    get:
+      security: []
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Product }, '404': { description: Not found } }
+  /api/v1/orders:
+    post:
+      security: []
+      responses: { '201': { description: Order created } }
+  /api/v1/orders/mine:
+    get:
+      responses: { '200': { description: My orders } }
+  /api/v1/orders/{id}:
+    get:
+      responses: { '200': { description: Order } }
+  /api/v1/orders/{id}/payment-status:
+    get:
+      responses: { '200': { description: Payment status } }
+  /api/v1/orders/{id}/cancel:
+    post:
+      responses: { '200': { description: Cancelled } }
+  /api/v1/payments/checkout:
+    post:
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { order_id: { type: string, format: uuid } } } } } }
+      responses: { '200': { description: Checkout fields for PayFast form POST } }
+  /api/v1/payments/payfast/itn:
+    post:
+      security: []
+      requestBody: { required: true, content: { application/x-www-form-urlencoded: { schema: { type: object } } } }
+      responses: { '200': { description: ITN accepted (return OK) } }
+  /api/v1/catering/requests:
+    post:
+      security: []
+      responses: { '201': { description: Enquiry created } }
+  /api/v1/catering/quotes/{id}/accept:
+    post:
+      security: []
+      responses: { '200': { description: Accepted (not paid) } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    RegisterReq:
+      type: object
+      required: [full_name, email, password]
+      properties:
+        full_name: { type: string }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+    LoginReq:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+    Error:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        request_id: { type: string }

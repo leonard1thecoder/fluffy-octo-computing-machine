@@ -1,0 +1,81 @@
+# Render Blueprint — one-click container deploy for the Nhlanganiso Rust API.
+# Dashboard: New > Blueprint > select this repo. Fill every `sync: false` value.
+# Do NOT point Vercel at this repo: Vercel cannot run Docker or long-lived Rust
+# services. Vercel hosts the Next.js frontend; Render (or Railway/Fly.io) hosts this API.
+services:
+  - type: web
+    name: nhlanganiso-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/v1/health/ready
+    # Free plans sleep; PayFast ITN needs an always-reachable HTTPS endpoint.
+    plan: starter
+    envVars:
+      - key: APP_ENV
+        value: production
+      # BIND_ADDR intentionally unset: the app listens on Render's $PORT automatically.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nhlanganiso-db
+          property: connectionString
+      # REDIS_URL intentionally unset: rate limiting stays disabled until you
+      # add a Key Value instance and set REDIS_URL to its connection string.
+      - key: DATABASE_MAX_CONNECTIONS
+        value: 5
+      - key: DATABASE_MIN_CONNECTIONS
+        value: 0
+      - key: JWT_ISSUER
+        value: nhlanganiso-api
+      - key: JWT_AUDIENCE
+        value: nhlanganiso-web
+      - key: JWT_ACCESS_TTL_SECONDS
+        value: 900
+      - key: JWT_REFRESH_TTL_SECONDS
+        value: 2592000
+      - key: PAYFAST_MODE
+        value: sandbox
+      - key: PAYFAST_VALIDATE_IP
+        value: true
+      - key: LOG_LEVEL
+        value: info
+      # Fill in via the Render dashboard after first deploy:
+      # Auto-generated on first deploy; rotate via dashboard + redeploy.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false # your Vercel URL, e.g. https://your-app.vercel.app
+      - key: PUBLIC_WEB_URL
+        sync: false # same Vercel URL
+      - key: PUBLIC_API_URL
+        sync: false # this service's https://....onrender.com URL
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: BREVO_SENDER_NAME
+        sync: false
+      - key: PAYFAST_MERCHANT_ID
+        sync: false
+      - key: PAYFAST_MERCHANT_KEY
+        sync: false
+      - key: PAYFAST_PASSPHRASE
+        sync: false
+      # --- Google OAuth 2.0 / OpenID Connect ---
+      # Google redirects the browser straight to this API host. A top-level
+      # browser redirect is a normal navigation, so CORS does not apply and the
+      # storefront proxy is not involved. The API then bounces the browser to
+      # PUBLIC_WEB_URL with a single-use code.
+      # It MUST match the redirect URI registered in Google Cloud Console exactly.
+      - key: GOOGLE_REDIRECT_URI
+        value: https://fluffy-octo-computing-machine-byij.vercel.app/api/v1/auth/google/callback
+      - key: GOOGLE_ISSUER
+        value: https://accounts.google.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false # Google Cloud Console > OAuth 2.0 Client ID
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false # Google Cloud Console > client secret
+
+databases:
+  - name: nhlanganiso-db
+    databaseName: nhlanganiso
+    user: nhlanganiso
