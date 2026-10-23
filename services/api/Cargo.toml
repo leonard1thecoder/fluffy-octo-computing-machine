@@ -45,6 +45,7 @@ http-body-util = "0.1"
 async-trait = "0.1"
 
 [dev-dependencies]
-axum-test = "16"
+axum-test = "21"
+serial_test = "3"
 tokio-test = "0.4"
 wiremock = "0.6"

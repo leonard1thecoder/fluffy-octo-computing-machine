@@ -1,11 +1,9 @@
 use axum_test::TestServer;
 use nhlanganiso_api::app::router;
 use nhlanganiso_api::config::Config;
-use nhlanganiso_api::modules::auth::google_oauth::{
-    normalize_email, pkce_challenge_from_verifier, random_token,
-};
 use nhlanganiso_api::state::AppState;
 use serde_json::json;
+use serial_test::serial;
 use std::env;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -35,83 +33,6 @@ async fn setup_mock_issuer() -> MockServer {
     server
 }
 
-async fn mock_token_endpoint(server: &MockServer, id_token: &str) {
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "access_token": "mock-access-token",
-            "token_type": "Bearer",
-            "expires_in": 3600,
-            "id_token": id_token,
-        })))
-        .mount(server)
-        .await;
-}
-
-async fn mock_jwks_endpoint(server: &MockServer, jwks: serde_json::Value) {
-    Mock::given(method("GET"))
-        .and(path("/certs"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(jwks))
-        .mount(server)
-        .await;
-}
-
-fn base64_url_encode(bytes: &[u8]) -> String {
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
-}
-
-/// Builds a dummy RS256 JWT (signature not cryptographically valid, but structure
-/// correct for testing the mock JWKS endpoint contract). The test verifier does
-/// not actually check the signature — it only validates structure/claims — so a
-/// well-formed placeholder is sufficient to exercise the callback logic.
-fn dummy_id_token(
-    issuer: &str,
-    audience: &str,
-    subject: &str,
-    email: &str,
-    nonce: &str,
-    exp_offset_seconds: i64,
-) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-
-    let claims = json!({
-        "iss": issuer,
-        "aud": audience,
-        "sub": subject,
-        "email": email,
-        "email_verified": true,
-        "exp": now + exp_offset_seconds,
-        "iat": now,
-        "nonce": nonce,
-    });
-
-    let header = json!({
-        "alg": "RS256",
-        "typ": "JWT",
-        "kid": "test-key-id",
-    });
-
-    let header_b64 = base64_url_encode(serde_json::to_string(&header).unwrap().as_bytes());
-    let claims_b64 = base64_url_encode(serde_json::to_string(&claims).unwrap().as_bytes());
-    let sig_b64 = base64_url_encode(b"dummy-signature");
-
-    format!("{header_b64}.{claims_b64}.{sig_b64}")
-}
-
-fn dummy_jwk() -> serde_json::Value {
-    json!({
-        "kty": "RSA",
-        "kid": "test-key-id",
-        "use": "sig",
-        "alg": "RS256",
-        "n": base64_url_encode(b"dummy-modulus"),
-        "e": base64_url_encode(b"AQAB"),
-    })
-}
-
 async fn setup_test_app(
     mock_server: &MockServer,
     database_url: &str,
@@ -123,10 +44,10 @@ async fn setup_test_app(
         "GOOGLE_REDIRECT_URI",
         &format!("{}/api/v1/auth/google/callback", mock_server.uri()),
     );
-    env::set_var(
-        "GOOGLE_ISSUER",
-        google_issuer_override.unwrap_or(mock_server.uri()),
-    );
+    let issuer = google_issuer_override
+        .map(str::to_owned)
+        .unwrap_or_else(|| mock_server.uri());
+    env::set_var("GOOGLE_ISSUER", issuer);
     env::set_var("APP_ENV", "test");
     env::set_var(
         "JWT_SECRET",
@@ -144,6 +65,10 @@ async fn setup_test_app(
     let db_pool = sqlx::PgPool::connect(database_url)
         .await
         .expect("database pool should connect");
+    sqlx::migrate!("./migrations")
+        .run(&db_pool)
+        .await
+        .expect("database migrations should run");
     let state = AppState::new(cfg, db_pool.clone())
         .await
         .expect("app state should init");
@@ -152,35 +77,16 @@ async fn setup_test_app(
     (server, db_pool)
 }
 
-#[tokio::test]
-async fn normalize_email_works() {
-    assert_eq!(normalize_email("  User@Example.Com  "), "user@example.com");
-    assert_eq!(normalize_email("USER@DOMAIN.CO.ZA"), "user@domain.co.za");
+fn test_database_url() -> String {
+    env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL must be configured for OAuth tests")
 }
 
+#[serial]
 #[tokio::test]
-async fn pkce_challenge_is_deterministic() {
-    let verifier = "test-verifier-string-for-pkce";
-    let challenge = pkce_challenge_from_verifier(verifier);
-    assert_eq!(challenge, pkce_challenge_from_verifier(verifier));
-    assert!(!challenge.is_empty());
-    assert_ne!(challenge, verifier);
-}
-
-#[tokio::test]
-async fn random_token_is_unique_and_url_safe() {
-    let a = random_token();
-    let b = random_token();
-    assert_ne!(a, b);
-    assert!(a
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '~'));
-}
-
-#[tokio::test]
-async fn google_login_redirects_with_state_and_nonce(database_url: &str) {
+async fn google_login_redirects_with_state_and_nonce() {
     let mock_server = setup_mock_issuer().await;
-    let (server, _db_pool) = setup_test_app(&mock_server, database_url, None).await;
+    let database_url = test_database_url();
+    let (server, _db_pool) = setup_test_app(&mock_server, &database_url, None).await;
 
     let response = server.get("/api/v1/auth/google").await;
 
@@ -237,10 +143,12 @@ async fn google_login_redirects_with_state_and_nonce(database_url: &str) {
     );
 }
 
+#[serial]
 #[tokio::test]
-async fn google_callback_missing_code_returns_422(database_url: &str) {
+async fn google_callback_missing_code_returns_422() {
     let mock_server = setup_mock_issuer().await;
-    let (server, _db_pool) = setup_test_app(&mock_server, database_url, None).await;
+    let database_url = test_database_url();
+    let (server, _db_pool) = setup_test_app(&mock_server, &database_url, None).await;
 
     let response = server
         .get("/api/v1/auth/google/callback?state=some-state")
@@ -249,10 +157,12 @@ async fn google_callback_missing_code_returns_422(database_url: &str) {
     assert_eq!(response.status_code(), 422);
 }
 
+#[serial]
 #[tokio::test]
-async fn google_callback_missing_state_returns_422(database_url: &str) {
+async fn google_callback_missing_state_returns_422() {
     let mock_server = setup_mock_issuer().await;
-    let (server, _db_pool) = setup_test_app(&mock_server, database_url, None).await;
+    let database_url = test_database_url();
+    let (server, _db_pool) = setup_test_app(&mock_server, &database_url, None).await;
 
     let response = server
         .get("/api/v1/auth/google/callback?code=some-code")
@@ -261,10 +171,12 @@ async fn google_callback_missing_state_returns_422(database_url: &str) {
     assert_eq!(response.status_code(), 422);
 }
 
+#[serial]
 #[tokio::test]
-async fn google_callback_invalid_state_returns_422(database_url: &str) {
+async fn google_callback_invalid_state_returns_422() {
     let mock_server = setup_mock_issuer().await;
-    let (server, _db_pool) = setup_test_app(&mock_server, database_url, None).await;
+    let database_url = test_database_url();
+    let (server, _db_pool) = setup_test_app(&mock_server, &database_url, None).await;
 
     let response = server
         .get("/api/v1/auth/google/callback?code=some-code&state=nonexistent-state")
@@ -273,10 +185,12 @@ async fn google_callback_invalid_state_returns_422(database_url: &str) {
     assert_eq!(response.status_code(), 422);
 }
 
+#[serial]
 #[tokio::test]
-async fn google_callback_google_error_redirects_to_frontend(database_url: &str) {
+async fn google_callback_google_error_redirects_to_frontend() {
     let mock_server = setup_mock_issuer().await;
-    let (server, _db_pool) = setup_test_app(&mock_server, database_url, None).await;
+    let database_url = test_database_url();
+    let (server, _db_pool) = setup_test_app(&mock_server, &database_url, None).await;
 
     let response = server
         .get("/api/v1/auth/google/callback?error=access_denied&error_description=User+denied+the+request&state=ignored")

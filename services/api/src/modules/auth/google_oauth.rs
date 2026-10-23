@@ -338,3 +338,33 @@ fn redirect_frontend_error(cfg: &Config, reason: &str) -> Redirect {
         cfg.public_web_url, reason
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_email, pkce_challenge_from_verifier, random_token};
+
+    #[test]
+    fn normalize_email_works() {
+        assert_eq!(normalize_email("  User@Example.Com  "), "user@example.com");
+        assert_eq!(normalize_email("USER@DOMAIN.CO.ZA"), "user@domain.co.za");
+    }
+
+    #[test]
+    fn pkce_challenge_is_deterministic() {
+        let verifier = "test-verifier-string-for-pkce";
+        let challenge = pkce_challenge_from_verifier(verifier);
+        assert_eq!(challenge, pkce_challenge_from_verifier(verifier));
+        assert!(!challenge.is_empty());
+        assert_ne!(challenge, verifier);
+    }
+
+    #[test]
+    fn random_token_is_unique_and_url_safe() {
+        let first = random_token();
+        let second = random_token();
+        assert_ne!(first, second);
+        assert!(first
+            .chars()
+            .all(|character| character.is_alphanumeric() || character == '-' || character == '_'));
+    }
+}
