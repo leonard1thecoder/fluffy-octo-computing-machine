@@ -8,7 +8,7 @@ use axum::{
 use base64::Engine;
 use chrono::Utc;
 use openidconnect::{
-    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    core::{CoreAuthenticationFlow, CoreClient, CoreJsonWebKeySet, CoreProviderMetadata},
     AuthorizationCode, CsrfToken, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, Nonce,
     PkceCodeChallenge, RedirectUrl, Scope, TokenResponse,
 };
@@ -73,19 +73,69 @@ async fn build_google_client(
         return Err(ApiError::Internal);
     }
 
-    // Google publishes its canonical issuer with a trailing slash, so normalize
-    // the configured root URL before strict OIDC discovery validation.
+    // URL canonicalization adds a trailing slash to root issuers. Google's
+    // discovery document currently publishes the equivalent issuer without it,
+    // which makes openidconnect's strict string comparison reject discovery.
     let issuer_url = format!("{}/", cfg.google_issuer.trim_end_matches('/'));
     let issuer = IssuerUrl::new(issuer_url).map_err(|error| {
         tracing::error!(error = %error, "google oauth issuer URL is invalid");
         ApiError::Internal
     })?;
-    let provider_meta = CoreProviderMetadata::discover_async(issuer, &reqwest::Client::new())
-        .await
-        .map_err(|e| {
-            tracing::warn!(error = %e, "google oidc discovery failed");
-            ApiError::Internal
-        })?;
+    let http_client = reqwest::Client::new();
+    let provider_meta = if issuer.as_str() == "https://accounts.google.com/" {
+        // Only tolerate Google's known root-slash discrepancy. Verify the raw
+        // issuer exactly before adapting it, then retain normal OIDC metadata
+        // parsing and JWKS fetching/verification.
+        let discovery_url = issuer
+            .join(".well-known/openid-configuration")
+            .map_err(|error| {
+                tracing::warn!(error = %error, "google oidc discovery URL is invalid");
+                ApiError::Internal
+            })?;
+        let mut metadata: serde_json::Value = http_client
+            .get(discovery_url)
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|error| {
+                tracing::warn!(error = %error, "google oidc discovery request failed");
+                ApiError::Internal
+            })?
+            .json()
+            .await
+            .map_err(|error| {
+                tracing::warn!(error = %error, "google oidc discovery response was invalid");
+                ApiError::Internal
+            })?;
+        let discovered_issuer = metadata.get("issuer").and_then(serde_json::Value::as_str);
+        if !matches!(
+            discovered_issuer,
+            Some("https://accounts.google.com" | "https://accounts.google.com/")
+        ) {
+            tracing::warn!("google oidc discovery returned an unexpected issuer");
+            return Err(ApiError::Internal);
+        }
+        metadata["issuer"] = serde_json::Value::String(issuer.as_str().to_owned());
+        let mut provider_meta: CoreProviderMetadata =
+            serde_json::from_value(metadata).map_err(|error| {
+                tracing::warn!(error = %error, "google oidc discovery metadata was invalid");
+                ApiError::Internal
+            })?;
+        let jwks = CoreJsonWebKeySet::fetch_async(provider_meta.jwks_uri(), &http_client)
+            .await
+            .map_err(|error| {
+                tracing::warn!(error = %error, "google oidc JWKS fetch failed");
+                ApiError::Internal
+            })?;
+        provider_meta.set_jwks(jwks)
+    } else {
+        CoreProviderMetadata::discover_async(issuer, &http_client)
+            .await
+            .map_err(|error| {
+                tracing::warn!(error = %error, "google oidc discovery failed");
+                ApiError::Internal
+            })?
+    };
 
     Ok(CoreClient::from_provider_metadata(
         provider_meta,
