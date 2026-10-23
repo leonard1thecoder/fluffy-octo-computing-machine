@@ -32,7 +32,7 @@ async fn process_batch(state: &SharedState) -> anyhow::Result<()> {
                 tracing::warn!(
                     email_id = %id,
                     attempt = attempts + 1,
-                    error = %e,
+                    error = %format!("{e:#}"),
                     "outbound email delivery failed; retry scheduled"
                 );
                 sqlx::query(

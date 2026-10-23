@@ -64,6 +64,9 @@ impl BrevoClient {
                 html: html.to_string(),
                 text: html_to_text(html),
             })
+            // The shared API client has a short default timeout; SMTP providers
+            // can take longer to accept a message during transient load.
+            .timeout(std::time::Duration::from_secs(30))
             .send()
             .await?;
         if !res.status().is_success() {
