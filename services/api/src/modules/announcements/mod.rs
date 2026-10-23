@@ -3,8 +3,8 @@ use crate::{
     response::ApiResponse, state::SharedState, workers::email_outbox,
 };
 use axum::{
-    extract::{HeaderMap, Path, Query, State},
-    http::StatusCode,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
     routing::{get, patch},
     Json, Router,
 };

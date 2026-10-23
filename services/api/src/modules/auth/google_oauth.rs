@@ -8,8 +8,9 @@ use axum::{
 use base64::Engine;
 use chrono::Utc;
 use openidconnect::{
-    core::{CoreClient, CoreIdTokenVerifier, CoreProviderMetadata, CoreResponseType},
-    AuthorizationCode, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge, RedirectUrl, Scope,
+    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    AuthorizationCode, CsrfToken, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, Nonce,
+    PkceCodeChallenge, RedirectUrl, Scope,
 };
 use rand::RngCore;
 use serde::Deserialize;
@@ -46,7 +47,19 @@ struct OAuthTransaction {
 }
 
 /// Build Google OAuth client from OpenID Connect discovery.
-async fn build_google_client(cfg: &Config) -> Result<CoreClient, ApiError> {
+async fn build_google_client(
+    cfg: &Config,
+) -> Result<
+    CoreClient<
+        EndpointSet,
+        EndpointNotSet,
+        EndpointNotSet,
+        EndpointNotSet,
+        EndpointMaybeSet,
+        EndpointMaybeSet,
+    >,
+    ApiError,
+> {
     if cfg.google_client_id.is_empty()
         || cfg.google_client_secret.is_empty()
         || cfg.google_redirect_uri.is_empty()
@@ -104,12 +117,15 @@ async fn google_login(
         RedirectUrl::new(s.cfg.google_redirect_uri.clone()).map_err(|_| ApiError::Internal)?;
     let client = client.set_redirect_uri(redirect_url);
 
-    let (auth_url, _csrf_token) = client
-        .authorize_url(CoreResponseType::Code, CsrfToken::new_random)
+    let (auth_url, _csrf_token, _nonce) = client
+        .authorize_url(
+            CoreAuthenticationFlow::AuthorizationCode,
+            || CsrfToken::new(state.clone()),
+            || Nonce::new(nonce.clone()),
+        )
         .add_scope(Scope::new("openid".to_string()))
         .add_scope(Scope::new("email".to_string()))
         .add_scope(Scope::new("profile".to_string()))
-        .set_nonce(Nonce::new(nonce.clone()))
         .set_pkce_challenge(code_challenge)
         .url();
 
@@ -181,8 +197,13 @@ async fn google_callback(
         RedirectUrl::new(s.cfg.google_redirect_uri.clone()).map_err(|_| ApiError::Internal)?;
     let client = client.set_redirect_uri(redirect_url);
 
-    let token_response = client
+    let token_request = client
         .exchange_code(AuthorizationCode::new(code))
+        .map_err(|e| {
+            tracing::warn!(error = %e, "google token endpoint is unavailable");
+            ApiError::Internal
+        })?;
+    let token_response = token_request
         .set_pkce_verifier(openidconnect::PkceCodeVerifier::new(
             tx.code_verifier.clone(),
         ))
@@ -194,7 +215,7 @@ async fn google_callback(
         })?;
 
     let id_token = token_response.id_token().ok_or(ApiError::Unauthorized)?;
-    let verifier = CoreIdTokenVerifier::new(client.id_token_verifier());
+    let verifier = client.id_token_verifier();
     let claims = id_token
         .claims(&verifier, &Nonce::new(tx.nonce.clone()))
         .map_err(|e| {
