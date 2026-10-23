@@ -64,10 +64,22 @@ async fn build_google_client(
         || cfg.google_client_secret.is_empty()
         || cfg.google_redirect_uri.is_empty()
     {
+        tracing::error!(
+            client_id_configured = !cfg.google_client_id.is_empty(),
+            client_secret_configured = !cfg.google_client_secret.is_empty(),
+            redirect_uri_configured = !cfg.google_redirect_uri.is_empty(),
+            "google oauth configuration is incomplete"
+        );
         return Err(ApiError::Internal);
     }
 
-    let issuer = IssuerUrl::new(cfg.google_issuer.clone()).map_err(|_| ApiError::Internal)?;
+    // Google publishes its canonical issuer with a trailing slash, so normalize
+    // the configured root URL before strict OIDC discovery validation.
+    let issuer_url = format!("{}/", cfg.google_issuer.trim_end_matches('/'));
+    let issuer = IssuerUrl::new(issuer_url).map_err(|error| {
+        tracing::error!(error = %error, "google oauth issuer URL is invalid");
+        ApiError::Internal
+    })?;
     let provider_meta = CoreProviderMetadata::discover_async(issuer, &reqwest::Client::new())
         .await
         .map_err(|e| {
@@ -113,8 +125,10 @@ async fn google_login(
         &openidconnect::PkceCodeVerifier::new(code_verifier.clone()),
     );
 
-    let redirect_url =
-        RedirectUrl::new(s.cfg.google_redirect_uri.clone()).map_err(|_| ApiError::Internal)?;
+    let redirect_url = RedirectUrl::new(s.cfg.google_redirect_uri.clone()).map_err(|error| {
+        tracing::error!(error = %error, "google oauth redirect URL is invalid");
+        ApiError::Internal
+    })?;
     let client = client.set_redirect_uri(redirect_url);
 
     let oauth_state = state.clone();
@@ -144,7 +158,10 @@ async fn google_login(
     .bind(expires_at)
     .execute(&s.db)
     .await
-    .map_err(|_| ApiError::Internal)?;
+    .map_err(|error| {
+        tracing::error!(error = %error, "failed to store google oauth transaction");
+        ApiError::Internal
+    })?;
 
     Ok(Redirect::to(auth_url.as_str()))
 }

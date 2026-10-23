@@ -30,7 +30,7 @@ async fn process_batch(state: &SharedState) -> anyhow::Result<()> {
                 let next_secs: i64 = 60 * 2_i64.pow(attempts.clamp(0, 6) as u32);
                 let jitter = (rand::random::<i64>() % 30).abs();
                 sqlx::query(
-                    "UPDATE email_outbox SET attempts=attempts+1, next_attempt_at=now()+($2::bigint * interval '1 second'), last_error=$3, status=CASE WHEN attempts+1>=8 THEN 'failed' ELSE 'pending' END WHERE id=$1",
+                    "UPDATE email_outbox SET attempts=attempts+1, next_attempt_at=now()+($2::bigint * interval '1 second'), last_error=$3, status=CASE WHEN attempts+1>=8 THEN 'failed'::email_status ELSE 'pending'::email_status END WHERE id=$1",
                 )
                 .bind(id).bind(next_secs + jitter).bind(format!("{e:.200}"))
                 .execute(&state.db).await?;

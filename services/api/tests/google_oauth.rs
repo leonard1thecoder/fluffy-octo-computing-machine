@@ -14,7 +14,7 @@ async fn setup_mock_issuer() -> MockServer {
     Mock::given(method("GET"))
         .and(path("/.well-known/openid-configuration"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "issuer": server.uri(),
+            "issuer": format!("{}/", server.uri()),
             "authorization_endpoint": format!("{}/authorize", server.uri()),
             "token_endpoint": format!("{}/token", server.uri()),
             "jwks_uri": format!("{}/certs", server.uri()),
@@ -46,7 +46,7 @@ async fn setup_test_app(
     );
     let issuer = google_issuer_override
         .map(str::to_owned)
-        .unwrap_or_else(|| mock_server.uri());
+        .unwrap_or_else(|| format!("{}/", mock_server.uri()));
     env::set_var("GOOGLE_ISSUER", issuer);
     env::set_var("APP_ENV", "test");
     env::set_var(

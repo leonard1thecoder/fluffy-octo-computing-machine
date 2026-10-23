@@ -67,9 +67,9 @@ services:
       # PUBLIC_WEB_URL with a single-use code.
       # It MUST match the redirect URI registered in Google Cloud Console exactly.
       - key: GOOGLE_REDIRECT_URI
-        value: https://fluffy-octo-computing-machine-byij.vercel.app/api/v1/auth/google/callback
+        value: https://nhlanganiso-app.vercel.app/api/v1/auth/google/callback
       - key: GOOGLE_ISSUER
-        value: https://accounts.google.com
+        value: https://accounts.google.com/
       - key: GOOGLE_CLIENT_ID
         sync: false # Google Cloud Console > OAuth 2.0 Client ID
       - key: GOOGLE_CLIENT_SECRET
