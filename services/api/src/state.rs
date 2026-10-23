@@ -10,3 +10,6 @@ pub struct AppState {
     pub redis: Client,
     pub brevo: BrevoClient,
 }
+
+/// Backwards-compatible name used by the route modules.
+pub type SharedState = AppState;
