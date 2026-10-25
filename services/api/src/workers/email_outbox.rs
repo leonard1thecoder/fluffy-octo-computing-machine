@@ -4,21 +4,37 @@ use crate::state::SharedState;
 /// business event; this worker sends via Brevo with bounded retries,
 /// exponential backoff + jitter. A process crash never loses queued mail.
 pub async fn run(state: SharedState) {
+    tracing::info!("email outbox worker started");
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+    let mut empty_polls = 0_u8;
     loop {
         interval.tick().await;
-        let _ = process_batch(&state)
-            .await
-            .map_err(|e| tracing::warn!(error = %format!("{e:#}"), "outbox batch failed"));
+        match process_batch(&state).await {
+            Ok(0) => {
+                empty_polls += 1;
+                if empty_polls >= 6 {
+                    tracing::info!("email outbox worker is running; no eligible pending emails");
+                    empty_polls = 0;
+                }
+            }
+            Ok(batch_size) => {
+                empty_polls = 0;
+                tracing::info!(batch_size, "email outbox batch loaded");
+            }
+            Err(error) => {
+                tracing::warn!(error = %format!("{error:#}"), "outbox batch failed");
+            }
+        }
     }
 }
 
-async fn process_batch(state: &SharedState) -> anyhow::Result<()> {
+async fn process_batch(state: &SharedState) -> anyhow::Result<usize> {
     let rows: Vec<(uuid::Uuid, String, String, String, i32)> = sqlx::query_as(
         "SELECT id, recipient, subject, body_html, attempts FROM email_outbox WHERE status='pending' AND next_attempt_at <= now() ORDER BY created_at LIMIT 20",
     )
     .fetch_all(&state.db)
     .await?;
+    let batch_size = rows.len();
     for (id, to, subject, html, attempts) in rows {
         tracing::info!(
             email_id = %id,
@@ -51,7 +67,7 @@ async fn process_batch(state: &SharedState) -> anyhow::Result<()> {
             }
         }
     }
-    Ok(())
+    Ok(batch_size)
 }
 
 /// Queue an email in the caller's transaction. Caller must commit.
