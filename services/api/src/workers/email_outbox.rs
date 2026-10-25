@@ -30,7 +30,7 @@ pub async fn run(state: SharedState) {
 
 async fn process_batch(state: &SharedState) -> anyhow::Result<usize> {
     let rows: Vec<(uuid::Uuid, String, String, String, i32)> = sqlx::query_as(
-        "SELECT id, recipient, subject, body_html, attempts FROM email_outbox WHERE status='pending' AND next_attempt_at <= now() ORDER BY CASE WHEN subject='Reset your Nhlanganiso password' THEN 0 ELSE 1 END, created_at LIMIT 1",
+        "SELECT id, recipient, subject, body_html, attempts FROM email_outbox WHERE status='pending' AND next_attempt_at <= now() ORDER BY CASE WHEN subject='Reset your Nhlanganiso password' THEN 0 ELSE 1 END, CASE WHEN subject='Reset your Nhlanganiso password' THEN created_at END DESC, created_at ASC LIMIT 1",
     )
     .fetch_all(&state.db)
     .await?;
@@ -77,6 +77,22 @@ pub async fn enqueue(
     subject: &str,
     body_html: &str,
 ) -> anyhow::Result<uuid::Uuid> {
+    if subject == "Reset your Nhlanganiso password" {
+        let superseded = sqlx::query(
+            "UPDATE email_outbox SET status='failed', last_error='Superseded by a newer password reset request' WHERE status='pending' AND subject=$1 AND recipient=$2",
+        )
+        .bind(subject)
+        .bind(recipient)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+        if superseded > 0 {
+            tracing::info!(
+                count = superseded,
+                "older pending password reset emails superseded"
+            );
+        }
+    }
     let id = sqlx::query_scalar::<_, uuid::Uuid>(
         "INSERT INTO email_outbox (recipient, subject, body_html) VALUES ($1,$2,$3) RETURNING id",
     )
