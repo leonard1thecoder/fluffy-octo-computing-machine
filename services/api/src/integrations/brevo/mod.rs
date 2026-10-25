@@ -29,18 +29,22 @@ struct Payload {
 }
 
 impl BrevoClient {
-    pub fn new(
-        http: reqwest::Client,
-        api_key: String,
-        sender_email: String,
-        sender_name: String,
-    ) -> Self {
-        Self {
+    pub fn new(api_key: String, sender_email: String, sender_name: String) -> anyhow::Result<Self> {
+        // Keep provider traffic isolated from the shared API client. A dedicated
+        // pool avoids reusing stale connections after long idle periods and gives
+        // the Brevo request its own connect and response deadlines.
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(60))
+            .pool_idle_timeout(std::time::Duration::from_secs(15))
+            .user_agent("nhlanganiso-api/0.1")
+            .build()?;
+        Ok(Self {
             http,
-            api_key,
-            sender_email,
-            sender_name,
-        }
+            api_key: api_key.trim().to_owned(),
+            sender_email: sender_email.trim().to_owned(),
+            sender_name: sender_name.trim().to_owned(),
+        })
     }
 
     /// POST https://api.brevo.com/v3/smtp/email — returns provider messageId.
@@ -48,6 +52,7 @@ impl BrevoClient {
         if self.api_key.is_empty() {
             anyhow::bail!("BREVO_API_KEY not configured");
         }
+        let started_at = std::time::Instant::now();
         let res = self
             .http
             .post("https://api.brevo.com/v3/smtp/email")
@@ -64,11 +69,26 @@ impl BrevoClient {
                 html: html.to_string(),
                 text: html_to_text(html),
             })
-            // The shared API client has a short default timeout; SMTP providers
-            // can take longer to accept a message during transient load.
-            .timeout(std::time::Duration::from_secs(30))
             .send()
-            .await?;
+            .await;
+        let res = match res {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(
+                    elapsed_ms = started_at.elapsed().as_millis() as u64,
+                    timed_out = error.is_timeout(),
+                    connection_error = error.is_connect(),
+                    error = %error,
+                    "Brevo HTTP request failed"
+                );
+                return Err(error.into());
+            }
+        };
+        tracing::info!(
+            elapsed_ms = started_at.elapsed().as_millis() as u64,
+            status = %res.status(),
+            "Brevo HTTP response received"
+        );
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();

@@ -150,11 +150,18 @@ impl Config {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
-            brevo_api_key: std::env::var("BREVO_API_KEY").unwrap_or_default(),
+            brevo_api_key: std::env::var("BREVO_API_KEY")
+                .unwrap_or_default()
+                .trim()
+                .to_owned(),
             brevo_sender_email: std::env::var("BREVO_SENDER_EMAIL")
-                .unwrap_or_else(|_| "no-reply@example.co.za".into()),
+                .unwrap_or_else(|_| "no-reply@example.co.za".into())
+                .trim()
+                .to_owned(),
             brevo_sender_name: std::env::var("BREVO_SENDER_NAME")
-                .unwrap_or_else(|_| "Nhlanganiso Catering and Baking".into()),
+                .unwrap_or_else(|_| "Nhlanganiso Catering and Baking".into())
+                .trim()
+                .to_owned(),
             payfast_merchant_id: std::env::var("PAYFAST_MERCHANT_ID").unwrap_or_default(),
             payfast_merchant_key: std::env::var("PAYFAST_MERCHANT_KEY").unwrap_or_default(),
             payfast_passphrase: std::env::var("PAYFAST_PASSPHRASE").unwrap_or_default(),

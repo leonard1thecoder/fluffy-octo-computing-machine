@@ -33,11 +33,10 @@ impl AppState {
             .user_agent("nhlanganiso-api/0.1")
             .build()?;
         let brevo = BrevoClient::new(
-            http.clone(),
             cfg.brevo_api_key.clone(),
             cfg.brevo_sender_email.clone(),
             cfg.brevo_sender_name.clone(),
-        );
+        )?;
         Ok(Arc::new(Self {
             cfg,
             db,
