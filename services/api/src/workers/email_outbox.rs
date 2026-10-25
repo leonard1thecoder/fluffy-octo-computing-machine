@@ -1,7 +1,7 @@
 use crate::state::SharedState;
 
 /// Durable email outbox: rows inserted in the same DB transaction as the
-/// business event; this worker sends via Brevo with bounded retries,
+/// business event; this worker sends via Gmail with bounded retries,
 /// exponential backoff + jitter. A process crash never loses queued mail.
 pub async fn run(state: SharedState) {
     tracing::info!("email outbox worker started");
@@ -41,7 +41,7 @@ async fn process_batch(state: &SharedState) -> anyhow::Result<usize> {
             attempt = attempts + 1,
             "outbound email delivery started"
         );
-        let res = state.brevo.send(&to, &subject, &html).await;
+        let res = state.gmail.send(&to, &subject, &html).await;
         match res {
             Ok(provider_id) => {
                 sqlx::query("UPDATE email_outbox SET status='sent', provider_message_id=$2, sent_at=now() WHERE id=$1")

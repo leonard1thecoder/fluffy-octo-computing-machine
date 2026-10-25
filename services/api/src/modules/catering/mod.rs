@@ -83,7 +83,7 @@ async fn create_request(
     );
     email_outbox::enqueue(
         &mut tx,
-        &s.cfg.brevo_sender_email,
+        &s.cfg.gmail_sender_email,
         "New catering enquiry",
         &admin_html,
     )

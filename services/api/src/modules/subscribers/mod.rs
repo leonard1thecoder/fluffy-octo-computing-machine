@@ -181,7 +181,7 @@ async fn verify(
         ),
     );
     let _ = s
-        .brevo
+        .gmail
         .send(&email, "Subscription confirmed — Nhlanganiso", &html)
         .await;
 

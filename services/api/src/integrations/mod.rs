@@ -1,2 +1,2 @@
-pub mod brevo;
+pub mod gmail;
 pub mod payfast;

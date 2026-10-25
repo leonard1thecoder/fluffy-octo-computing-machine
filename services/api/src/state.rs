@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Context;
 
 use crate::config::Config;
-use crate::integrations::brevo::BrevoClient;
+use crate::integrations::gmail::GmailClient;
 use sqlx::PgPool;
 
 #[derive(Clone)]
@@ -12,7 +12,7 @@ pub struct AppState {
     pub db: PgPool,
     pub redis: Option<redis::Client>,
     pub http: reqwest::Client,
-    pub brevo: BrevoClient,
+    pub gmail: GmailClient,
 }
 
 impl AppState {
@@ -32,17 +32,19 @@ impl AppState {
             .timeout(std::time::Duration::from_secs(10))
             .user_agent("nhlanganiso-api/0.1")
             .build()?;
-        let brevo = BrevoClient::new(
-            cfg.brevo_api_key.clone(),
-            cfg.brevo_sender_email.clone(),
-            cfg.brevo_sender_name.clone(),
+        let gmail = GmailClient::new(
+            cfg.gmail_client_id.clone(),
+            cfg.gmail_client_secret.clone(),
+            cfg.gmail_refresh_token.clone(),
+            cfg.gmail_sender_email.clone(),
+            cfg.gmail_sender_name.clone(),
         )?;
         Ok(Arc::new(Self {
             cfg,
             db,
             redis,
             http,
-            brevo,
+            gmail,
         }))
     }
 }

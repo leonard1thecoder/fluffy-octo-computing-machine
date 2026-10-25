@@ -67,7 +67,8 @@ Two Vercel projects, one repo each:
 | `GOOGLE_CLIENT_SECRET` | Google Cloud Console > client secret |
 | `GOOGLE_REDIRECT_URI` | `https://fluffy-octo-computing-machine-byij.vercel.app/api/v1/auth/google/callback` |
 | `GOOGLE_ISSUER` | `https://accounts.google.com` (default) |
-| `BREVO_API_KEY` / `BREVO_SENDER_EMAIL` / `BREVO_SENDER_NAME` | Brevo dashboard |
+| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | Google Cloud OAuth client and consent grant with `gmail.send` scope |
+| `GMAIL_SENDER_EMAIL` / `GMAIL_SENDER_NAME` | Gmail mailbox authorized by the refresh token |
 | `PAYFAST_MERCHANT_ID` / `PAYFAST_MERCHANT_KEY` / `PAYFAST_PASSPHRASE` | PayFast dashboard |
 | `PAYFAST_MODE` | `sandbox` until you go live |
 | `REDIS_URL` | optional - unset means rate limiting is disabled |
@@ -140,15 +141,16 @@ cargo test --all-targets
 
 Browser return URLs are informational only — only a fully validated ITN marks an order paid.
 
-## Brevo
+## Gmail API email delivery
 
-1. Verify sender domain/address in Brevo dashboard.
-2. Create API key (SMTP + transactional), set `BREVO_API_KEY` + sender envs.
-3. Emails are queued in `email_outbox` in the same DB transaction as the business event,
+1. Enable the Gmail API in the Google Cloud project.
+2. Authorize a mailbox with the `https://www.googleapis.com/auth/gmail.send` scope and obtain an OAuth refresh token. The normal Google sign-in grant does not include this mail permission.
+3. Set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, and `GMAIL_SENDER_EMAIL` in the API environment. The sender address must be the authorized Gmail mailbox or an allowed send-as alias.
+4. Emails are queued in `email_outbox` in the same DB transaction as the business event,
    then sent by the `email-outbox` worker with exponential backoff + jitter.
 
 ## Manual merchant steps that cannot be automated
 
 - PayFast live activation, passphrase, notify/return/cancel URLs, IP whitelist confirmation.
-- Brevo sender verification + dedicated IP (if used).
+- Gmail API OAuth grant and sender mailbox configuration.
 - DNS/TLS (HTTPS), CORS origins, trusted-proxy config, DB backups, secret rotation.

@@ -23,9 +23,11 @@ pub struct Config {
     /// (fail-open, warned). Set REDIS_URL to enforce distributed limits.
     pub redis_url: Option<String>,
     pub cors_allowed_origins: Vec<String>,
-    pub brevo_api_key: String,
-    pub brevo_sender_email: String,
-    pub brevo_sender_name: String,
+    pub gmail_client_id: String,
+    pub gmail_client_secret: String,
+    pub gmail_refresh_token: String,
+    pub gmail_sender_email: String,
+    pub gmail_sender_name: String,
     pub payfast_merchant_id: String,
     pub payfast_merchant_key: String,
     pub payfast_passphrase: String,
@@ -74,10 +76,13 @@ impl Config {
                 );
             }
             // Merchant integrations are warned, not fatal: the service must boot
-            // (and pass health checks) before Brevo/PayFast keys are entered.
+            // (and pass health checks) before Gmail/PayFast credentials are entered.
             // Related features fail loudly at use-time until configured.
             for v in [
-                "BREVO_API_KEY",
+                "GMAIL_CLIENT_ID",
+                "GMAIL_CLIENT_SECRET",
+                "GMAIL_REFRESH_TOKEN",
+                "GMAIL_SENDER_EMAIL",
                 "PAYFAST_MERCHANT_ID",
                 "PAYFAST_MERCHANT_KEY",
             ] {
@@ -150,15 +155,23 @@ impl Config {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
-            brevo_api_key: std::env::var("BREVO_API_KEY")
+            gmail_client_id: std::env::var("GMAIL_CLIENT_ID")
                 .unwrap_or_default()
                 .trim()
                 .to_owned(),
-            brevo_sender_email: std::env::var("BREVO_SENDER_EMAIL")
-                .unwrap_or_else(|_| "no-reply@example.co.za".into())
+            gmail_client_secret: std::env::var("GMAIL_CLIENT_SECRET")
+                .unwrap_or_default()
                 .trim()
                 .to_owned(),
-            brevo_sender_name: std::env::var("BREVO_SENDER_NAME")
+            gmail_refresh_token: std::env::var("GMAIL_REFRESH_TOKEN")
+                .unwrap_or_default()
+                .trim()
+                .to_owned(),
+            gmail_sender_email: std::env::var("GMAIL_SENDER_EMAIL")
+                .unwrap_or_default()
+                .trim()
+                .to_owned(),
+            gmail_sender_name: std::env::var("GMAIL_SENDER_NAME")
                 .unwrap_or_else(|_| "Nhlanganiso Catering and Baking".into())
                 .trim()
                 .to_owned(),
