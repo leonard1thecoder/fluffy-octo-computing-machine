@@ -139,18 +139,60 @@ impl GmailClient {
             }
         }
 
-        let response = self
-            .http
-            .post(TOKEN_URL)
-            .form(&[
-                ("client_id", self.client_id.as_str()),
-                ("client_secret", self.client_secret.as_str()),
-                ("refresh_token", self.refresh_token.as_str()),
-                ("grant_type", "refresh_token"),
-            ])
-            .send()
-            .await
-            .context("refreshing Gmail API access token")?;
+        let mut response = None;
+        for attempt in 1..=3 {
+            let started_at = tokio::time::Instant::now();
+            let result = self
+                .http
+                .post(TOKEN_URL)
+                .form(&[
+                    ("client_id", self.client_id.as_str()),
+                    ("client_secret", self.client_secret.as_str()),
+                    ("refresh_token", self.refresh_token.as_str()),
+                    ("grant_type", "refresh_token"),
+                ])
+                .send()
+                .await;
+
+            match result {
+                Ok(result) if result.status().is_server_error() && attempt < 3 => {
+                    tracing::warn!(
+                        attempt,
+                        status = %result.status(),
+                        elapsed_ms = started_at.elapsed().as_millis() as u64,
+                        "Google OAuth token endpoint returned a server error; retrying"
+                    );
+                }
+                Ok(result) => {
+                    response = Some(result);
+                    break;
+                }
+                Err(error) if attempt < 3 && (error.is_timeout() || error.is_connect()) => {
+                    tracing::warn!(
+                        attempt,
+                        timed_out = error.is_timeout(),
+                        connection_error = error.is_connect(),
+                        elapsed_ms = started_at.elapsed().as_millis() as u64,
+                        error = %error,
+                        "Google OAuth token request failed transiently; retrying"
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        attempt,
+                        timed_out = error.is_timeout(),
+                        connection_error = error.is_connect(),
+                        elapsed_ms = started_at.elapsed().as_millis() as u64,
+                        error = %error,
+                        "Google OAuth token request failed"
+                    );
+                    return Err(error).context("refreshing Gmail API access token");
+                }
+            }
+
+            tokio::time::sleep(Duration::from_secs(attempt as u64)).await;
+        }
+        let response = response.context("Google OAuth token request retries exhausted")?;
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
