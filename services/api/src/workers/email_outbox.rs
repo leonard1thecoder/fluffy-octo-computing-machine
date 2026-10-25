@@ -30,7 +30,7 @@ pub async fn run(state: SharedState) {
 
 async fn process_batch(state: &SharedState) -> anyhow::Result<usize> {
     let rows: Vec<(uuid::Uuid, String, String, String, i32)> = sqlx::query_as(
-        "SELECT id, recipient, subject, body_html, attempts FROM email_outbox WHERE status='pending' AND next_attempt_at <= now() ORDER BY created_at LIMIT 20",
+        "SELECT id, recipient, subject, body_html, attempts FROM email_outbox WHERE status='pending' AND next_attempt_at <= now() ORDER BY CASE WHEN subject='Reset your Nhlanganiso password' THEN 0 ELSE 1 END, created_at LIMIT 1",
     )
     .fetch_all(&state.db)
     .await?;
