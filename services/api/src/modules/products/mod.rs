@@ -60,14 +60,42 @@ async fn list(
     let page = q.page.unwrap_or(1).max(1);
     let per = q.per_page.unwrap_or(20).clamp(1, 100);
     let off = (page - 1) * per;
+    let search = q.search.as_deref().filter(|value| !value.trim().is_empty());
+    let category = q.category.as_deref().filter(|value| !value.trim().is_empty());
+
+    // Search both product and category names. The storefront uses category names
+    // as collection queries, so filtering only products.name hid valid products.
     let rows: Vec<ProductListRow> = sqlx::query_as(
-        "SELECT id, name, slug, price_cents, currency, active, description, image_url FROM products WHERE active=true AND ($1 IS NULL OR name ILIKE '%'||$1||'%') ORDER BY name LIMIT $2 OFFSET $3",
+        "SELECT p.id, p.name, p.slug, p.price_cents, p.currency, p.active, p.description, p.image_url \
+         FROM products p \
+         LEFT JOIN categories c ON c.id = p.category_id \
+         WHERE p.active = true \
+           AND ($1::text IS NULL OR p.name ILIKE '%' || $1 || '%' OR c.name ILIKE '%' || $1 || '%') \
+           AND ($2::text IS NULL OR c.slug = $2 OR c.name ILIKE $2) \
+         ORDER BY p.name \
+         LIMIT $3 OFFSET $4",
     )
-    .bind(q.search.clone()).bind(per).bind(off).fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM products WHERE active=true")
-        .fetch_one(&s.db)
-        .await
-        .map_err(|_| ApiError::Internal)?;
+    .bind(search)
+    .bind(category)
+    .bind(per)
+    .bind(off)
+    .fetch_all(&s.db)
+    .await
+    .map_err(|_| ApiError::Internal)?;
+
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM products p \
+         LEFT JOIN categories c ON c.id = p.category_id \
+         WHERE p.active = true \
+           AND ($1::text IS NULL OR p.name ILIKE '%' || $1 || '%' OR c.name ILIKE '%' || $1 || '%') \
+           AND ($2::text IS NULL OR c.slug = $2 OR c.name ILIKE $2)",
+    )
+    .bind(search)
+    .bind(category)
+    .fetch_one(&s.db)
+    .await
+    .map_err(|_| ApiError::Internal)?;
+
     let items: Vec<Product> = rows
         .into_iter()
         .map(
