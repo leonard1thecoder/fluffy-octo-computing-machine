@@ -13,17 +13,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-type ProductListRow = (
-    uuid::Uuid,
-    String,
-    String,
-    i64,
-    String,
-    bool,
-    String,
-    Option<String>,
-);
-
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/api/v1/products", get(list).post(create))
@@ -31,7 +20,7 @@ pub fn router() -> Router<SharedState> {
         .route("/api/v1/products/{id}/availability", get(availability))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, sqlx::FromRow)]
 struct Product {
     id: uuid::Uuid,
     name: String,
@@ -41,10 +30,23 @@ struct Product {
     active: bool,
     description: String,
     image_url: Option<String>,
+    /// Number of accounts that have favourited this product.
+    favorite_count: i64,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+struct ProductDetail {
+    id: uuid::Uuid,
+    name: String,
+    slug: String,
+    price_cents: i64,
+    description: String,
+    image_url: Option<String>,
+    /// Number of accounts that have favourited this product.
+    favorite_count: i64,
 }
 
 #[derive(Deserialize)]
-#[allow(dead_code)]
 struct ListQ {
     search: Option<String>,
     category: Option<String>,
@@ -53,6 +55,16 @@ struct ListQ {
     sort: Option<String>,
 }
 
+/// FROM and WHERE for the product list and its total, so the total always counts the rows
+/// that are shown. A category matches by slug, and a top-level category also includes its
+/// sub-categories.
+const PRODUCT_FROM: &str = "FROM products p
+    LEFT JOIN categories c ON c.id = p.category_id
+    LEFT JOIN categories pc ON pc.id = c.parent_id";
+const PRODUCT_FILTERS: &str = "p.active = true
+    AND ($1::text IS NULL OR p.name ILIKE '%' || $1 || '%')
+    AND ($2::text IS NULL OR c.slug = $2 OR pc.slug = $2)";
+
 async fn list(
     State(s): State<SharedState>,
     Query(q): Query<ListQ>,
@@ -60,29 +72,48 @@ async fn list(
     let page = q.page.unwrap_or(1).max(1);
     let per = q.per_page.unwrap_or(20).clamp(1, 100);
     let off = (page - 1) * per;
-    let rows: Vec<ProductListRow> = sqlx::query_as(
-        "SELECT id, name, slug, price_cents, currency, active, description, image_url FROM products WHERE active=true AND ($1 IS NULL OR name ILIKE '%'||$1||'%') ORDER BY name LIMIT $2 OFFSET $3",
-    )
-    .bind(q.search.clone()).bind(per).bind(off).fetch_all(&s.db).await.map_err(|_| ApiError::Internal)?;
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM products WHERE active=true")
+    let most_liked = match q.sort.as_deref() {
+        None | Some("") | Some("name") => false,
+        Some("most_liked") => true,
+        Some(_) => {
+            return Err(ApiError::Unprocessable(
+                "sort must be name or most_liked".into(),
+            ))
+        }
+    };
+    let search = q.search;
+    let category = q
+        .category
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(str::to_owned);
+
+    let list_sql = format!(
+        "SELECT p.id, p.name, p.slug, p.price_cents, p.currency, p.active, p.description, p.image_url, fav.n AS favorite_count \
+         {PRODUCT_FROM} \
+         CROSS JOIN LATERAL (SELECT COUNT(*) AS n FROM product_favorites f WHERE f.product_id = p.id) fav \
+         WHERE {PRODUCT_FILTERS} \
+         ORDER BY CASE WHEN $3 THEN fav.n END DESC NULLS LAST, p.name, p.id \
+         LIMIT $4 OFFSET $5"
+    );
+    let items: Vec<Product> = sqlx::query_as(&list_sql)
+        .bind(search.as_deref())
+        .bind(category.as_deref())
+        .bind(most_liked)
+        .bind(per)
+        .bind(off)
+        .fetch_all(&s.db)
+        .await
+        .map_err(|_| ApiError::Internal)?;
+
+    let count_sql = format!("SELECT COUNT(*) {PRODUCT_FROM} WHERE {PRODUCT_FILTERS}");
+    let total: i64 = sqlx::query_scalar(&count_sql)
+        .bind(search.as_deref())
+        .bind(category.as_deref())
         .fetch_one(&s.db)
         .await
         .map_err(|_| ApiError::Internal)?;
-    let items: Vec<Product> = rows
-        .into_iter()
-        .map(
-            |(id, name, slug, price_cents, currency, active, description, image_url)| Product {
-                id,
-                name,
-                slug,
-                price_cents,
-                currency,
-                active,
-                description,
-                image_url,
-            },
-        )
-        .collect();
     Ok((
         StatusCode::OK,
         Json(
@@ -98,19 +129,17 @@ async fn get_by_slug(
     if slug.len() > 160 || slug.is_empty() {
         return Err(ApiError::NotFound);
     }
-    let rec: Option<(uuid::Uuid, String, String, i64, String, Option<String>)> = sqlx::query_as(
-        "SELECT id, name, slug, price_cents, description, image_url FROM products WHERE slug=$1 AND active=true",
+    let rec: Option<ProductDetail> = sqlx::query_as(
+        "SELECT p.id, p.name, p.slug, p.price_cents, p.description, p.image_url, (SELECT COUNT(*) FROM product_favorites f WHERE f.product_id = p.id) AS favorite_count FROM products p WHERE p.slug=$1 AND p.active=true",
     )
     .bind(&slug)
     .fetch_optional(&s.db)
     .await
     .map_err(|_| ApiError::Internal)?;
-    let Some((id, name, slug, price_cents, description, image_url)) = rec else {
+    let Some(product) = rec else {
         return Err(ApiError::NotFound);
     };
-    let (st, Json(inner)) = ApiResponse::ok(
-        serde_json::json!({"id": id, "name": name, "slug": slug, "price_cents": price_cents, "description": description, "image_url": image_url}),
-    );
+    let (st, Json(inner)) = ApiResponse::ok(serde_json::json!(product));
     Ok((st, Json(inner.data)))
 }
 

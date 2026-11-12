@@ -96,18 +96,46 @@ paths:
   /api/v1/products:
     get:
       security: []
+      description: Active products. Each item includes favorite_count, the number of accounts that favourited it. meta.total counts the rows that match the filters.
       parameters:
         - { name: search, in: query, schema: { type: string } }
+        - { name: category, in: query, description: Category slug. A top-level category includes its sub-categories., schema: { type: string } }
+        - { name: sort, in: query, description: Defaults to name., schema: { type: string, enum: [name, most_liked] } }
         - { name: page, in: query, schema: { type: integer } }
         - { name: per_page, in: query, schema: { type: integer } }
-      responses: { '200': { description: Paged } }
+      responses: { '200': { description: Paged }, '422': { description: Unknown sort value } }
     post:
       responses: { '201': { description: Created } }
   /api/v1/products/{slug}:
     get:
       security: []
+      description: Active product, including favorite_count (accounts that favourited it).
       parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
       responses: { '200': { description: Product }, '404': { description: Not found } }
+  /api/v1/products/favorites:
+    get:
+      description: The signed-in shopper's saved products, newest first, up to 100. The response is a bare array.
+      responses: { '200': { description: Saved products }, '401': { description: Unauthorized } }
+  /api/v1/products/{id}/favorite:
+    post:
+      description: Saves the shopper's like. Saving twice is harmless, and favorited is true either way.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: 'Saved: { product_id, favorited }' }
+        '401': { description: Unauthorized }
+        '404': { description: Product not found or inactive }
+    delete:
+      description: Removes the shopper's like.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: 'Removed: { product_id, favorited: false }' }
+        '401': { description: Unauthorized }
+        '404': { description: Product was not saved }
+  /api/v1/delivery-zones:
+    get:
+      security: []
+      description: Active delivery areas with their fee in cents. Send the id as delivery_zone_id when checkout uses delivery.
+      responses: { '200': { description: Zones, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/DeliveryZone' } } } } } }
   /api/v1/orders:
     post:
       security: []
@@ -158,6 +186,13 @@ components:
       properties:
         email: { type: string, format: email }
         password: { type: string }
+    DeliveryZone:
+      type: object
+      required: [id, name, fee_cents]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        fee_cents: { type: integer, minimum: 0 }
     Error:
       type: object
       properties:
