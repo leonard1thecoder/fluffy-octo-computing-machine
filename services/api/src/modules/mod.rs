@@ -5,6 +5,7 @@ pub mod cart;
 pub mod categories;
 pub mod catering;
 pub mod coupons;
+pub mod delivery_zones;
 pub mod favorites;
 pub mod inventory;
 pub mod notifications;
