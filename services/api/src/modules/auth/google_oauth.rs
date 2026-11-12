@@ -116,7 +116,7 @@ async fn build_google_client(
             return Err(ApiError::Internal);
         }
         metadata["issuer"] = serde_json::Value::String(issuer.as_str().to_owned());
-        let mut provider_meta: CoreProviderMetadata =
+        let provider_meta: CoreProviderMetadata =
             serde_json::from_value(metadata).map_err(|error| {
                 tracing::warn!(error = %error, "google oidc discovery metadata was invalid");
                 ApiError::Internal
