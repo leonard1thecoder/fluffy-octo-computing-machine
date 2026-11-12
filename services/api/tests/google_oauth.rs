@@ -30,6 +30,13 @@ async fn setup_mock_issuer() -> MockServer {
         .mount(&server)
         .await;
 
+    // Discovery also fetches the key set from the advertised jwks_uri (/certs).
+    Mock::given(method("GET"))
+        .and(path("/certs"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "keys": [] })))
+        .mount(&server)
+        .await;
+
     server
 }
 
@@ -90,7 +97,8 @@ async fn google_login_redirects_with_state_and_nonce() {
 
     let response = server.get("/api/v1/auth/google").await;
 
-    assert_eq!(response.status_code(), 302);
+    // axum's Redirect::to responds 303 See Other.
+    assert_eq!(response.status_code(), 303);
     let location = response
         .headers()
         .get("location")
@@ -109,18 +117,19 @@ async fn google_login_redirects_with_state_and_nonce() {
         location.contains("client_id=test-client-id"),
         "should include client id: {location}"
     );
-    assert!(
-        location.contains("scope=openid"),
-        "should request openid scope: {location}"
-    );
-    assert!(
-        location.contains("scope=email"),
-        "should request email scope: {location}"
-    );
-    assert!(
-        location.contains("scope=profile"),
-        "should request profile scope: {location}"
-    );
+    // All scopes travel in one space-separated `scope` parameter, encoded with `+`.
+    let scopes: Vec<&str> = location
+        .split(['?', '&'])
+        .find_map(|pair| pair.strip_prefix("scope="))
+        .expect("location should carry a scope parameter")
+        .split('+')
+        .collect();
+    for expected in ["openid", "email", "profile"] {
+        assert!(
+            scopes.contains(&expected),
+            "should request {expected} scope: {location}"
+        );
+    }
     assert!(
         location.contains("redirect_uri="),
         "should include redirect uri: {location}"
@@ -196,7 +205,8 @@ async fn google_callback_google_error_redirects_to_frontend() {
         .get("/api/v1/auth/google/callback?error=access_denied&error_description=User+denied+the+request&state=ignored")
         .await;
 
-    assert_eq!(response.status_code(), 302);
+    // axum's Redirect::to responds 303 See Other.
+    assert_eq!(response.status_code(), 303);
     let location = response
         .headers()
         .get("location")
